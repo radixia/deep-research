@@ -478,6 +478,103 @@ Options:
 | **Vitest** (already installed) | Unit + integration tests | Zero-config with TypeScript, co-located with source, fast |
 | **msw** (Mock Service Worker) | Mock HTTP calls in tests | Test tool clients without real API calls |
 
+### Workflow orchestration
+| Library/Service | Purpose | Why |
+|----------------|---------|-----|
+| **Temporal** | Durable workflow execution engine | See §7.1 for full analysis |
+
+---
+
+## 7.1 Temporal — Extended analysis
+
+[Temporal](https://temporal.io) is a workflow execution engine: your TypeScript code becomes a durable workflow that Temporal checkpoints and resumes automatically, even across process crashes. Individual API calls become **Activities** with declarative retry and timeout policies.
+
+### Why it's relevant here
+
+The most critical architectural gap (§6.1) — `deep` mode is synchronous while Manus takes up to 15 minutes — is **exactly** the problem Temporal is designed for. The existing `ResearchOrchestrator` maps almost 1:1 to a Temporal Workflow:
+
+```typescript
+export async function ResearchWorkflow(query: ResearchQuery): Promise<ResearchResult> {
+  const acts = proxyActivities<ResearchActivities>({
+    // Declarative timeouts per tool — no manual AbortSignal
+    startToCloseTimeout: {
+      manus:      "15 minutes",
+      perplexity: "2 minutes",
+      tavily:     "30 seconds",
+      firecrawl:  "1 minute",
+    },
+    // Built-in retry with exponential backoff — replaces p-retry
+    retry: { maximumAttempts: 3, backoffCoefficient: 2 },
+  });
+
+  if (query.depth === "deep") {
+    // Promise.all inside a Workflow: Temporal checkpoints each Activity result.
+    // If the process crashes here, it resumes from the last completed Activity.
+    const [fastResults, manusResult] = await Promise.all([
+      Promise.all([acts.runPerplexity(query.query), acts.runTavily(query.query)]),
+      acts.runManus(query.query),
+    ]);
+    return fuseResults([...fastResults, manusResult]);
+  }
+  // ...
+}
+```
+
+### Manus webhook as a Temporal Signal
+
+The most elegant benefit: the Manus webhook becomes a **Signal** — Temporal manages the wait state instead of the in-process `ManusTaskStore`:
+
+```typescript
+// apps/api — webhook handler
+await temporalClient.getHandle(workflowId).signal("manusCompleted", { result, status });
+
+// Inside the Workflow Activity for Manus
+const result = await condition(() => manusSignalReceived, "15 minutes");
+```
+
+`ManusTaskStore` is no longer needed — Temporal owns the state.
+
+### What Temporal solves vs. the current plan
+
+| Problem | BullMQ + Redis (current plan) | Temporal |
+|---------|-------------------------------|----------|
+| `deep` mode async | ✅ Job ID + polling | ✅ Workflow ID + polling |
+| Crash durability | ❌ Job lost, restarts from zero | ✅ Resumes from last checkpoint |
+| Retry per tool | Manual (`p-retry`) | ✅ Declarative per Activity |
+| Per-tool timeouts | Manual (`AbortSignal`) | ✅ `startToCloseTimeout` |
+| Visibility | BullMQ dashboard (basic) | ✅ Temporal UI — full event history |
+| Manus webhook state | `ManusTaskStore` (in-memory) | ✅ Signal — Temporal owns state |
+
+### Drawbacks
+
+- **Operational overhead**: requires a Temporal server (self-hosted via `docker compose`, or Temporal Cloud which is paid)
+- **Learning curve**: Workflow/Activity/Worker/TaskQueue/Signal are new primitives — 1-2 days ramp-up for a developer unfamiliar with the model
+- **Overkill for `quick` mode**: 10–30s synchronous requests don't benefit from Temporal's async machinery; the polling overhead adds unnecessary latency
+- **Not edge-compatible**: Temporal Workers are long-running processes — incompatible with Cloudflare Workers or Vercel Edge Functions
+
+### Recommendation
+
+**Adopt in two phases:**
+
+```
+Phase 1 — Alpha (now)
+  BullMQ + Redis (Upstash serverless)
+  → Fixes deep mode with minimal new concepts
+  → Zero infrastructure added (Upstash is serverless)
+  → Ship in days
+
+Phase 2 — Beta / multi-tenant
+  Migrate orchestrator → Temporal Workflow
+  Migrate tool clients → Activities
+  → Each tool.run() becomes an Activity (surgical change)
+  → ManusTaskStore removed entirely
+  → Manus webhook becomes a Signal
+  → Full durability, retry, visibility
+  → Temporal Cloud or self-hosted k8s deployment
+```
+
+Temporal is the right long-term destination for this architecture. The migration from Phase 1 to Phase 2 is additive — BullMQ job logic maps directly onto Temporal Workflow/Activity patterns with no conceptual rewrite required.
+
 ---
 
 ## 8. Deployment notes
@@ -492,8 +589,10 @@ Single instance (current)
     (requires: move ManusTaskStore → Redis)
   → Edge deployment (Cloudflare Workers / Vercel Edge)
     (requires: replace @hono/node-server with native fetch handler)
-  → Fully async job architecture
-    (requires: BullMQ + Redis + polling/SSE endpoint)
+  → Async job architecture — Phase 1
+    (requires: BullMQ + Redis + job ID polling endpoint)
+  → Durable workflow architecture — Phase 2
+    (requires: Temporal server + Worker process + migrate Orchestrator → Workflows)
 ```
 
 The architecture is designed so each step in this path is an additive change, not a rewrite.
