@@ -1,0 +1,28 @@
+{
+  "name": "deep-research",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Deep Research Agent — Manus + Firecrawl + Tavily + Perplexity",
+  "engines": { "node": ">=22" },
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter @deep-research/api run dev",
+    "test": "vitest run",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "workspaces": [
+    "packages/*",
+    "packages/tools/*",
+    "apps/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.3.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
