@@ -599,7 +599,139 @@ The architecture is designed so each step in this path is an additive change, no
 
 ---
 
-## 9. Environment variables
+## 9. Roadmap to Beta and beyond
+
+### 9.1 What's missing for beta
+
+**Hard blockers** — without these the system cannot be handed to any external user:
+
+| Gap | Why it blocks |
+|-----|--------------|
+| **Async job pattern** (`deep` mode) | No client waits 15 minutes on a synchronous HTTP request |
+| **Authentication** | The API is open to anyone — an API key header is sufficient for beta |
+| **Rate limiting** | Without limits, a single user can exhaust all four tool budgets in minutes |
+| **Config validation at boot** | Without Zod on `process.env`, the server starts silently broken if a key is missing |
+| **LLM-based `decompose()`** | Currently wastes 3 Tavily calls on identical sub-queries — a real cost issue |
+
+**Important but not blocking:**
+
+| Gap | Notes |
+|-----|-------|
+| Retry on tool clients | A network flap causes permanent failure — `p-retry`, 2 lines per client |
+| `outputFormat` and `maxSources` actually working | They're in the API contract but ignored — inconsistency that confuses callers |
+| At least smoke tests on orchestrator and fusion | To avoid deploying silent regressions |
+| Job persistence (Redis) | The in-memory `ManusTaskStore` dies with the process — in beta you cannot lose a 15-minute research job |
+
+**Estimated effort:** with focus, 1 week of development covers all blockers.
+
+---
+
+### 9.2 Can it become agentic?
+
+Yes — and it's the natural direction. But it shifts the paradigm fundamentally.
+
+**Today** the system is a **fixed pipeline**:
+```
+query → [hardcoded depth strategy] → tools in parallel → fusion → output
+```
+
+**Agentic** means placing an LLM as the planner that decides dynamically:
+```
+query → LLM Planner
+          ↓
+     "What do I already know? What am I missing?"
+          ↓
+     selects tools + adaptive sub-queries
+          ↓
+     executes, reads intermediate results
+          ↓
+     "Is this sufficient? Are there contradictions?"
+          ↓ [if no: loops back]
+     LLM Synthesizer → final report
+```
+
+**Concrete value it would add:**
+
+- **Adaptive research**: if Perplexity replies "there are conflicting sources on X", the planner fires a targeted Tavily search on X instead of stopping
+- **Intelligent decomposition**: replaces the `decompose()` stub with an LLM that understands query semantics
+- **Multi-turn**: the user asks a follow-up — "dig deeper into the sanctions angle" — and the system continues the same session without restarting from zero
+- **Real synthesis**: instead of verbatim passthrough from the best tool, an LLM synthesizes contributions from all tools into a coherent report
+
+The existing architecture already has the right building blocks — `ToolResult[]` as the canonical interface, FusionEngine decoupled from the orchestrator. The migration would be:
+
+```
+ResearchOrchestrator (hardcoded routing)
+  → AgenticOrchestrator (LLM decides loop, tools, stop condition)
+```
+
+**The risk:** latency and cost increase significantly. An agentic loop with 3–4 iterations can cost 10× a fixed pipeline. The solution: keep `quick` as a synchronous fixed pipeline and make `deep` agentic.
+
+---
+
+### 9.3 Does it make sense to use MCP servers?
+
+**Short answer: yes, but only if the system becomes agentic.**
+
+MCP (Model Context Protocol) servers expose tool APIs as standardized interfaces that an LLM can invoke directly via Claude. There are already production MCP servers for Brave Search, Firecrawl, Exa, and others.
+
+**If the system stays a fixed pipeline (today):**
+MCP adds nothing — you already have direct clients, they work, and putting an LLM in the middle of every API call adds latency and cost with no benefit.
+
+**If it becomes agentic:**
+MCP makes exact sense because Claude becomes the planner and needs to invoke tools dynamically:
+
+```
+Claude (planner) ←→ MCP: Brave Search, Firecrawl, Exa
+                 ←→ Client direct: Manus, Perplexity (no MCP server available)
+```
+
+The main benefit: Claude decides which tools to call, in what order, with what parameters — without you writing routing logic. The `ResearchOrchestrator` becomes nearly empty.
+
+**Realistic agentic stack:**
+
+```
+apps/api
+  POST /research → creates Temporal Workflow (or BullMQ job)
+
+packages/agent
+  AgenticResearchWorkflow
+    ├── Claude (claude-sonnet) with tool_use
+    ├── MCP: Brave Search, Firecrawl, Exa
+    ├── Direct client: Manus, Perplexity (no MCP available)
+    └── Loop: max 5 iterations or until stop condition
+```
+
+**Current MCP limitations:**
+- Not all tools have a mature MCP server (Perplexity: no, Manus: no)
+- Adds a latency hop for every tool call
+- Fine-grained parallelism control (e.g. Tavily × 3 in parallel) is harder with MCP than with direct clients
+
+---
+
+### 9.4 Phased evolution
+
+```
+Beta (1–2 weeks)
+  → Async job (BullMQ), auth, rate limiting, Zod config, LLM decompose, retry
+  → Fixed pipeline, direct clients, no MCP
+
+V1 Agentic (2–3 months)
+  → Replace orchestrator with LLM planner (Claude)
+  → deep mode becomes adaptive loop instead of parallel batch
+  → Manus + Perplexity remain direct clients
+  → Brave / Firecrawl / Exa via MCP
+
+V2 Production (later)
+  → Temporal for workflow durability
+  → Multi-turn research sessions with persistent context
+  → RAG over previous research sessions
+```
+
+**Key principle:** the current architecture does not need to be discarded for the agentic leap. `ToolResult` as a canonical interface, the fusion/orchestrator separation, and the `ManusTaskStore` abstraction are all compatible with the agentic plan. It is an evolution, not a rewrite.
+
+---
+
+## 10. Environment variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
