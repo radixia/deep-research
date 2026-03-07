@@ -603,131 +603,131 @@ The architecture is designed so each step in this path is an additive change, no
 
 ### 9.1 What's missing for beta
 
-**Hard blockers** — without these the system cannot be handed to any external user:
+**Hard blockers** — senza questi il sistema non può essere consegnato a utenti esterni:
 
-| Gap | Why it blocks |
+| Gap | Perché blocca |
 |-----|--------------|
-| **Async job pattern** (`deep` mode) | No client waits 15 minutes on a synchronous HTTP request |
-| **Authentication** | The API is open to anyone — an API key header is sufficient for beta |
-| **Rate limiting** | Without limits, a single user can exhaust all four tool budgets in minutes |
-| **Config validation at boot** | Without Zod on `process.env`, the server starts silently broken if a key is missing |
-| **LLM-based `decompose()`** | Currently wastes 3 Tavily calls on identical sub-queries — a real cost issue |
+| **Async job pattern** (`deep` mode) | Nessun client aspetta 15 minuti su una richiesta HTTP sincrona |
+| **Authentication** | L'API è aperta a chiunque — un API key header è sufficiente per beta |
+| **Rate limiting** | Senza limiti, un singolo utente esaurisce tutti e quattro i budget tool in minuti |
+| **Config validation at boot** | Senza Zod su `process.env`, il server parte silenziosamente rotto se manca una chiave |
+| **LLM-based `decompose()`** | Attualmente spreca 3 chiamate Tavily su sub-query identiche — problema di costo reale |
 
-**Important but not blocking:**
+**Importanti ma non bloccanti:**
 
-| Gap | Notes |
+| Gap | Note |
 |-----|-------|
-| Retry on tool clients | A network flap causes permanent failure — `p-retry`, 2 lines per client |
-| `outputFormat` and `maxSources` actually working | They're in the API contract but ignored — inconsistency that confuses callers |
-| At least smoke tests on orchestrator and fusion | To avoid deploying silent regressions |
-| Job persistence (Redis) | The in-memory `ManusTaskStore` dies with the process — in beta you cannot lose a 15-minute research job |
+| Retry sui tool client | Un flap di rete causa failure permanente — `p-retry`, 2 righe per client |
+| `outputFormat` e `maxSources` che funzionano davvero | Sono nel contratto API ma ignorati — inconsistenza che confonde i caller |
+| Almeno smoke test su orchestrator e fusion | Per non deployare regressioni silenziose |
+| Job persistence (Redis) | Il `ManusTaskStore` in-memory muore col processo — in beta non puoi perdere una ricerca da 15 min |
 
-**Estimated effort:** with focus, 1 week of development covers all blockers.
+**Stima effort:** con focus, 1 settimana di sviluppo copre tutti i blockers.
 
 ---
 
 ### 9.2 Can it become agentic?
 
-Yes — and it's the natural direction. But it shifts the paradigm fundamentally.
+Sì — ed è la direzione naturale. Ma cambia il paradigma in modo fondamentale.
 
-**Today** the system is a **fixed pipeline**:
+**Oggi** il sistema è una **fixed pipeline**:
 ```
-query → [hardcoded depth strategy] → tools in parallel → fusion → output
+query → [strategia depth hardcoded] → tool in parallelo → fusion → output
 ```
 
-**Agentic** means placing an LLM as the planner that decides dynamically:
+**Agentico** significa mettere un LLM come planner che decide dinamicamente:
 ```
 query → LLM Planner
           ↓
-     "What do I already know? What am I missing?"
+     "Cosa so già? Cosa mi manca?"
           ↓
-     selects tools + adaptive sub-queries
+     seleziona tool + sub-query adattive
           ↓
-     executes, reads intermediate results
+     esegue, legge risultati intermedi
           ↓
-     "Is this sufficient? Are there contradictions?"
-          ↓ [if no: loops back]
-     LLM Synthesizer → final report
+     "È sufficiente? Ci sono contraddizioni?"
+          ↓ [se no: loop]
+     LLM Synthesizer → report finale
 ```
 
-**Concrete value it would add:**
+**Valore concreto che aggiungerebbe:**
 
-- **Adaptive research**: if Perplexity replies "there are conflicting sources on X", the planner fires a targeted Tavily search on X instead of stopping
-- **Intelligent decomposition**: replaces the `decompose()` stub with an LLM that understands query semantics
-- **Multi-turn**: the user asks a follow-up — "dig deeper into the sanctions angle" — and the system continues the same session without restarting from zero
-- **Real synthesis**: instead of verbatim passthrough from the best tool, an LLM synthesizes contributions from all tools into a coherent report
+- **Ricerca adattiva**: se Perplexity risponde "ci sono fonti contrastanti su X", il planner lancia una ricerca Tavily mirata su X invece di fermarsi
+- **Decomposizione intelligente**: rimpiazza lo stub `decompose()` con un LLM che capisce la semantica della query
+- **Multi-turn**: l'utente chiede un follow-up — "approfondisci l'angolo sulle sanzioni" — e il sistema continua la stessa sessione senza ripartire da zero
+- **Sintesi reale**: invece del passthrough verbatim dal tool migliore, un LLM sintetizza i contributi di tutti i tool in un report coerente
 
-The existing architecture already has the right building blocks — `ToolResult[]` as the canonical interface, FusionEngine decoupled from the orchestrator. The migration would be:
+L'architettura esistente ha già i building block giusti — `ToolResult[]` come interfaccia canonica, FusionEngine disaccoppiato dall'orchestrator. La migrazione sarebbe:
 
 ```
-ResearchOrchestrator (hardcoded routing)
-  → AgenticOrchestrator (LLM decides loop, tools, stop condition)
+ResearchOrchestrator (routing hardcoded)
+  → AgenticOrchestrator (LLM decide loop, tool, stop condition)
 ```
 
-**The risk:** latency and cost increase significantly. An agentic loop with 3–4 iterations can cost 10× a fixed pipeline. The solution: keep `quick` as a synchronous fixed pipeline and make `deep` agentic.
+**Il rischio:** latenza e costo aumentano significativamente. Un loop agentico con 3–4 iterazioni può costare 10× una fixed pipeline. La soluzione: `quick` rimane pipeline sincrona, `deep` diventa agentico.
 
 ---
 
 ### 9.3 Does it make sense to use MCP servers?
 
-**Short answer: yes, but only if the system becomes agentic.**
+**Risposta breve: sì, ma solo se il sistema diventa agentico.**
 
-MCP (Model Context Protocol) servers expose tool APIs as standardized interfaces that an LLM can invoke directly via Claude. There are already production MCP servers for Brave Search, Firecrawl, Exa, and others.
+I server MCP (Model Context Protocol) espongono API di tool come interfacce standardizzate che un LLM può invocare direttamente via Claude. Esistono già server MCP in produzione per Brave Search, Firecrawl, Exa e altri.
 
-**If the system stays a fixed pipeline (today):**
-MCP adds nothing — you already have direct clients, they work, and putting an LLM in the middle of every API call adds latency and cost with no benefit.
+**Se il sistema resta fixed pipeline (oggi):**
+MCP non aggiunge nulla — hai già client diretti che funzionano, e mettere un LLM in mezzo a ogni chiamata API aggiunge latenza e costo senza benefici.
 
-**If it becomes agentic:**
-MCP makes exact sense because Claude becomes the planner and needs to invoke tools dynamically:
+**Se diventa agentico:**
+MCP ha senso perché Claude diventa il planner e deve invocare tool dinamicamente:
 
 ```
 Claude (planner) ←→ MCP: Brave Search, Firecrawl, Exa
                  ←→ Client direct: Manus, Perplexity (no MCP server available)
 ```
 
-The main benefit: Claude decides which tools to call, in what order, with what parameters — without you writing routing logic. The `ResearchOrchestrator` becomes nearly empty.
+Il beneficio principale: Claude decide quali tool chiamare, in che ordine, con quali parametri — senza che tu scriva logica di routing. Il `ResearchOrchestrator` diventa quasi vuoto.
 
-**Realistic agentic stack:**
+**Stack agentico realistico:**
 
 ```
 apps/api
-  POST /research → creates Temporal Workflow (or BullMQ job)
+  POST /research → crea Temporal Workflow (o BullMQ job)
 
 packages/agent
   AgenticResearchWorkflow
-    ├── Claude (claude-sonnet) with tool_use
+    ├── Claude (claude-sonnet) con tool_use
     ├── MCP: Brave Search, Firecrawl, Exa
-    ├── Direct client: Manus, Perplexity (no MCP available)
-    └── Loop: max 5 iterations or until stop condition
+    ├── Direct client: Manus, Perplexity (no MCP disponibile)
+    └── Loop: max 5 iterazioni o fino a stop condition
 ```
 
-**Current MCP limitations:**
-- Not all tools have a mature MCP server (Perplexity: no, Manus: no)
-- Adds a latency hop for every tool call
-- Fine-grained parallelism control (e.g. Tavily × 3 in parallel) is harder with MCP than with direct clients
+**Limitazioni MCP attuali:**
+- Non tutti i tool hanno un MCP server maturo (Perplexity: no, Manus: no)
+- Aggiunge un hop di latenza per ogni chiamata
+- Il controllo di parallelismo fine (es. Tavily × 3 in parallelo) è più difficile con MCP che con client diretti
 
 ---
 
 ### 9.4 Phased evolution
 
 ```
-Beta (1–2 weeks)
+Beta (1–2 settimane)
   → Async job (BullMQ), auth, rate limiting, Zod config, LLM decompose, retry
   → Fixed pipeline, direct clients, no MCP
 
-V1 Agentic (2–3 months)
-  → Replace orchestrator with LLM planner (Claude)
-  → deep mode becomes adaptive loop instead of parallel batch
-  → Manus + Perplexity remain direct clients
+V1 Agentic (2–3 mesi)
+  → Sostituire orchestrator con LLM planner (Claude)
+  → deep mode diventa adaptive loop invece di parallel batch
+  → Manus + Perplexity restano client diretti
   → Brave / Firecrawl / Exa via MCP
 
-V2 Production (later)
-  → Temporal for workflow durability
-  → Multi-turn research sessions with persistent context
-  → RAG over previous research sessions
+V2 Production (dopo)
+  → Temporal per workflow durability
+  → Multi-turn research sessions con contesto persistente
+  → RAG sulle sessioni di ricerca precedenti
 ```
 
-**Key principle:** the current architecture does not need to be discarded for the agentic leap. `ToolResult` as a canonical interface, the fusion/orchestrator separation, and the `ManusTaskStore` abstraction are all compatible with the agentic plan. It is an evolution, not a rewrite.
+**Principio chiave:** l'architettura attuale non va buttata per il salto agentico. `ToolResult` come interfaccia canonica, la separazione fusion/orchestrator, e l'astrazione `ManusTaskStore` sono tutte compatibili col piano agentico. È un'evoluzione, non un rewrite.
 
 ---
 
