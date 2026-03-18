@@ -146,7 +146,7 @@ export class ResearchOrchestrator {
         success: false,
         latencyMs: 0,
         citationsCount: 0,
-        error: missing.error,
+        ...(missing.error ? { error: missing.error } : {}),
       });
       return Promise.resolve(missing);
     }
