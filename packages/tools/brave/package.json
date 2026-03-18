@@ -1,5 +1,5 @@
 {
-  "name": "@deep-research/orchestrator",
+  "name": "@deep-research/tools-brave",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,10 +9,6 @@
     "build": "tsup src/index.ts --format esm --dts",
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
-    "@deep-research/types": "workspace:*",
-    "@deep-research/fusion": "workspace:*"
-  },
+  "dependencies": { "@deep-research/types": "workspace:*" },
   "devDependencies": { "tsup": "^8.0.0", "typescript": "^5.5.0" }
 }

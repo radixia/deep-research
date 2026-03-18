@@ -20,9 +20,9 @@ export class TavilyClient {
 
   async run(
     query: string,
-    options: { maxResults?: number; searchDepth?: "basic" | "advanced"; includeRawContent?: boolean } = {},
+    options: { maxResults?: number; searchDepth?: "basic" | "advanced"; includeRawContent?: boolean; signal?: AbortSignal } = {},
   ): Promise<ToolResult> {
-    const { maxResults = 10, searchDepth = "advanced", includeRawContent = true } = options;
+    const { maxResults = 10, searchDepth = "advanced", includeRawContent = true, signal } = options;
     const start = Date.now();
     try {
       const res = await fetch(`${TAVILY_BASE_URL}/search`, {
@@ -37,7 +37,7 @@ export class TavilyClient {
           max_results: maxResults,
           include_raw_content: includeRawContent,
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: signal ?? AbortSignal.timeout(30_000),
       });
 
       if (!res.ok) throw new Error(`Tavily error: ${res.status}`);
@@ -46,7 +46,7 @@ export class TavilyClient {
       const citations: Citation[] = data.results.map((r) => ({
         url: r.url,
         title: r.title,
-        snippet: r.content.slice(0, 500),
+        snippet: r.content.length > 500 ? `${r.content.slice(0, 500)}…` : r.content,
         sourceTool: "tavily" as const,
         fetchedAt: new Date(),
         credibilityScore: Math.min(1, r.score ?? 0.5),

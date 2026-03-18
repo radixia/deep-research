@@ -30,7 +30,7 @@ export class ManusClient {
     };
   }
 
-  async createTask(query: string): Promise<string> {
+  async createTask(query: string, signal?: AbortSignal): Promise<string> {
     const res = await fetch(`${MANUS_BASE_URL}/v1/tasks`, {
       method: "POST",
       headers: this.headers,
@@ -39,32 +39,34 @@ export class ManusClient {
         webhook_url: this.webhookUrl,
         return_format: "markdown",
       }),
+      ...(signal !== undefined && { signal }),
     });
     if (!res.ok) throw new Error(`Manus createTask failed: ${res.status}`);
     const data = (await res.json()) as { task_id: string };
     return data.task_id;
   }
 
-  async getTask(taskId: string): Promise<{ status: string; result?: string }> {
+  async getTask(taskId: string, signal?: AbortSignal): Promise<{ status: string; result?: string }> {
     const res = await fetch(`${MANUS_BASE_URL}/v1/tasks/${taskId}`, {
       headers: this.headers,
+      ...(signal !== undefined && { signal }),
     });
     if (!res.ok) throw new Error(`Manus getTask failed: ${res.status}`);
     return res.json() as Promise<{ status: string; result?: string }>;
   }
 
-  async run(query: string, maxWaitMs = 900_000): Promise<ToolResult> {
+  async run(query: string, options?: { signal?: AbortSignal; maxWaitMs?: number }): Promise<ToolResult> {
+    const maxWaitMs = options?.maxWaitMs ?? 900_000;
+    const signal = options?.signal;
     const start = Date.now();
     try {
-      const taskId = await this.createTask(query);
+      const taskId = await this.createTask(query, signal);
 
-      // Register the task in the store immediately so the webhook handler
-      // can write to it as soon as the result arrives.
       this.store?.init(taskId);
 
       const result = this.store
-        ? await this.waitViaStore(taskId, maxWaitMs)
-        : await this.waitViaPolling(taskId, maxWaitMs, start);
+        ? await this.waitViaStore(taskId, maxWaitMs, signal)
+        : await this.waitViaPolling(taskId, maxWaitMs, start, signal);
 
       return {
         tool: "manus",
@@ -88,21 +90,22 @@ export class ManusClient {
 
   // ── Private helpers ──────────────────────────────────────────────────────
 
-  /** Wait for the webhook to deliver the result via the in-process store. */
-  private async waitViaStore(taskId: string, maxWaitMs: number): Promise<string | null> {
-    const task = await this.store!.waitFor(taskId, maxWaitMs);
+  private async waitViaStore(taskId: string, maxWaitMs: number, signal?: AbortSignal): Promise<string | null> {
+    const task = await this.store!.waitFor(taskId, maxWaitMs, signal);
     if (task.status === "completed") return task.result ?? null;
     return null;
   }
 
-  /**
-   * Fallback: poll the Manus API directly.
-   * Used when no store is configured (e.g. in tests or when webhook is unavailable).
-   */
-  private async waitViaPolling(taskId: string, maxWaitMs: number, start: number): Promise<string | null> {
+  private async waitViaPolling(
+    taskId: string,
+    maxWaitMs: number,
+    start: number,
+    signal?: AbortSignal
+  ): Promise<string | null> {
     while (true) {
+      if (signal?.aborted) return null;
       if (Date.now() - start > maxWaitMs) return null;
-      const task = await this.getTask(taskId);
+      const task = await this.getTask(taskId, signal);
       if (task.status === "completed") return task.result ?? null;
       if (task.status === "failed") return null;
       await sleep(API_POLL_INTERVAL_MS);

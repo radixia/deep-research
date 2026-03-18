@@ -7,13 +7,14 @@
  * - Builds synthesis summary
  */
 
-import type { Citation, ToolResult } from "@deep-research/types";
+import type { Citation, OutputFormat, ToolResult } from "@deep-research/types";
 
 const TOOL_WEIGHT: Record<string, number> = {
   manus: 0.9,
   perplexity: 0.85,
   firecrawl: 0.8,
   tavily: 0.75,
+  brave: 0.75,
 };
 
 export interface FusionResult {
@@ -23,20 +24,31 @@ export interface FusionResult {
   dedupRatio: number;
 }
 
+export interface MergeOptions {
+  outputFormat?: OutputFormat;
+  maxSources?: number;
+}
+
 export class FusionEngine {
-  merge(query: string, toolResults: ToolResult[]): FusionResult {
+  merge(
+    query: string,
+    toolResults: ToolResult[],
+    options: MergeOptions = {}
+  ): FusionResult {
+    const { outputFormat = "markdown_report", maxSources = 50 } = options;
     const allCitations = toolResults.flatMap((tr) => (tr.success ? tr.citations : []));
     const totalBefore = allCitations.length;
 
     const unique = this.dedupByUrl(allCitations);
     const scored = this.applyCredibility(unique);
-    const ranked = scored.sort((a, b) => b.credibilityScore - a.credibilityScore);
+    const ranked = scored.slice().sort((a: Citation, b: Citation) => b.credibilityScore - a.credibilityScore);
+    const sources = ranked.slice(0, maxSources);
 
-    const summary = this.buildSummary(query, toolResults);
-    const confidenceScore = this.computeConfidence(ranked, toolResults);
-    const dedupRatio = totalBefore > 0 ? 1 - ranked.length / totalBefore : 0;
+    const summary = this.buildSummary(query, toolResults, sources, outputFormat);
+    const confidenceScore = this.computeConfidence(sources, toolResults);
+    const dedupRatio = totalBefore > 0 ? 1 - sources.length / totalBefore : 0;
 
-    return { summary, sources: ranked, confidenceScore, dedupRatio };
+    return { summary, sources, confidenceScore, dedupRatio };
   }
 
   private dedupByUrl(citations: Citation[]): Citation[] {
@@ -55,24 +67,49 @@ export class FusionEngine {
   private applyCredibility(citations: Citation[]): Citation[] {
     return citations.map((c) => {
       const weight = TOOL_WEIGHT[c.sourceTool] ?? 0.5;
-      return { ...c, credibilityScore: Math.min(1, c.credibilityScore * weight + weight * 0.1) };
+      return { ...c, credibilityScore: Math.min(1, c.credibilityScore * weight) };
     });
   }
 
-  private buildSummary(query: string, toolResults: ToolResult[]): string {
-    const priority = ["manus", "perplexity", "firecrawl", "tavily"] as const;
+  private buildSummary(
+    query: string,
+    toolResults: ToolResult[],
+    rankedSources: Citation[],
+    outputFormat: OutputFormat
+  ): string {
+    const priority = ["manus", "perplexity", "firecrawl", "tavily", "brave"] as const;
     const texts = Object.fromEntries(
       toolResults
         .filter((tr) => tr.success && typeof tr.rawOutput === "string")
         .map((tr) => [tr.tool, tr.rawOutput as string]),
     );
 
+    if (outputFormat === "citations_list") {
+      const lines = rankedSources.map(
+        (c, i) => `${i + 1}. [${c.title}](${c.url})\n   ${c.snippet.slice(0, 200)}...`
+      );
+      return `## Research: ${query}\n\n### Sources\n\n${lines.join("\n\n")}`;
+    }
+
+    if (outputFormat === "executive_summary") {
+      const excerpts = rankedSources
+        .slice(0, 5)
+        .map((c) => c.snippet.slice(0, 150))
+        .join("\n\n");
+      return `## Research: ${query}\n\n### Summary\n\n${excerpts || "No synthesis available."}`;
+    }
+
+    let primary = "";
     for (const tool of priority) {
       if (texts[tool]) {
-        return `## Research: ${query}\n\n*Primary source: ${tool}*\n\n${texts[tool]}`;
+        primary = `*Primary source: ${tool}*\n\n${texts[tool]}`;
+        break;
       }
     }
-    return `## Research: ${query}\n\nNo synthesis available.`;
+    const additional = rankedSources.slice(0, 5).map((c) => `- **${c.title}**: ${c.snippet.slice(0, 150)}...`);
+    const additionalBlock =
+      additional.length > 0 ? `\n\n### Additional sources\n\n${additional.join("\n")}` : "";
+    return `## Research: ${query}\n\n${primary || "No synthesis available."}${additionalBlock}`;
   }
 
   private computeConfidence(ranked: Citation[], toolResults: ToolResult[]): number {

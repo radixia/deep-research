@@ -13,8 +13,9 @@ export class PerplexityClient {
     private readonly model = "sonar-deep-research",
   ) {}
 
-  async run(query: string): Promise<ToolResult> {
+  async run(query: string, options?: { signal?: AbortSignal }): Promise<ToolResult> {
     const start = Date.now();
+    const signal = options?.signal;
     try {
       const res = await fetch(`${PERPLEXITY_BASE_URL}/chat/completions`, {
         method: "POST",
@@ -33,7 +34,7 @@ export class PerplexityClient {
           ],
           return_citations: true,
         }),
-        signal: AbortSignal.timeout(120_000),
+        signal: signal ?? AbortSignal.timeout(120_000),
       });
 
       if (!res.ok) throw new Error(`Perplexity error: ${res.status}`);
@@ -44,14 +45,21 @@ export class PerplexityClient {
       };
 
       const content = data.choices[0]?.message.content ?? "";
-      const citations: Citation[] = (data.citations ?? []).map((c) => ({
+      const rawCitations = (data.citations ?? []).map((c) => ({
         url: typeof c === "string" ? c : (c.url ?? ""),
         title: typeof c === "string" ? "" : (c.title ?? ""),
         snippet: typeof c === "string" ? "" : (c.snippet ?? ""),
-        sourceTool: "perplexity" as const,
-        fetchedAt: new Date(),
-        credibilityScore: 0.5,
       }));
+      const citations: Citation[] = rawCitations
+        .filter((c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url))
+        .map((c) => ({
+          url: c.url,
+          title: c.title,
+          snippet: c.snippet,
+          sourceTool: "perplexity" as const,
+          fetchedAt: new Date(),
+          credibilityScore: 0.5,
+        }));
 
       return { tool: "perplexity", rawOutput: content, citations, latencyMs: Date.now() - start, success: true };
     } catch (err) {

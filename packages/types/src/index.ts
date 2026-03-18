@@ -32,7 +32,7 @@ export const CitationSchema = z.object({
   url: z.string().url(),
   title: z.string(),
   snippet: z.string(),
-  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl"]),
+  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave"]),
   fetchedAt: z.coerce.date().default(() => new Date()),
   credibilityScore: z.number().min(0).max(1).default(0.5),
 });
@@ -47,6 +47,10 @@ export const ToolResultSchema = z.object({
   error: z.string().optional(),
 });
 export type ToolResult = z.infer<typeof ToolResultSchema>;
+
+export interface ToolClient {
+  run(query: string, options?: { signal?: AbortSignal; [key: string]: unknown }): Promise<ToolResult>;
+}
 
 export const ResearchResultSchema = z.object({
   query: z.string(),

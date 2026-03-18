@@ -18,10 +18,10 @@ export class FirecrawlClient {
     };
   }
 
-  async run(query: string, schema?: Record<string, unknown>): Promise<ToolResult> {
+  async run(query: string, options?: { schema?: Record<string, unknown>; signal?: AbortSignal }): Promise<ToolResult> {
+    const { schema, signal } = options ?? {};
     const start = Date.now();
     try {
-      // Use Agent endpoint for autonomous research (no URLs needed)
       const endpoint = schema
         ? `${FIRECRAWL_BASE_URL}/v1/extract`
         : `${FIRECRAWL_BASE_URL}/v1/search`;
@@ -34,7 +34,7 @@ export class FirecrawlClient {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(60_000),
+        signal: signal ?? AbortSignal.timeout(60_000),
       });
 
       if (!res.ok) throw new Error(`Firecrawl error: ${res.status}`);
@@ -49,7 +49,10 @@ export class FirecrawlClient {
         .map((item) => ({
           url: item.url!,
           title: item.title ?? "",
-          snippet: (item.markdown ?? "").slice(0, 500),
+          snippet: (() => {
+          const md = item.markdown ?? "";
+          return md.length > 500 ? `${md.slice(0, 500)}…` : md;
+        })(),
           sourceTool: "firecrawl" as const,
           fetchedAt: new Date(),
           credibilityScore: 0.5,
@@ -61,14 +64,14 @@ export class FirecrawlClient {
     }
   }
 
-  async scrapeUrl(url: string): Promise<ToolResult> {
+  async scrapeUrl(url: string, options?: { signal?: AbortSignal }): Promise<ToolResult> {
     const start = Date.now();
     try {
       const res = await fetch(`${FIRECRAWL_BASE_URL}/v1/scrape`, {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify({ url, formats: ["markdown"] }),
-        signal: AbortSignal.timeout(30_000),
+        signal: options?.signal ?? AbortSignal.timeout(30_000),
       });
 
       if (!res.ok) throw new Error(`Firecrawl scrape error: ${res.status}`);
