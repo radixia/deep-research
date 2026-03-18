@@ -29,15 +29,29 @@ async function main() {
   const query = "State of agentic AI in 2026";
 
   // 1. POST /research
-  let res = await fetch(`${BASE_URL}/research`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ query, depth: "quick" }),
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/research`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query, depth: "quick" }),
+    });
+  } catch (err) {
+    const code = err.cause?.code ?? err.code;
+    if (code === "ECONNREFUSED" || code === "ENOTFOUND" || err.message?.includes("fetch failed")) {
+      console.error("Cannot connect to API at", BASE_URL);
+      console.error("Start the server with: pnpm dev");
+      process.exit(1);
+    }
+    throw err;
+  }
 
   if (res.status !== 202) {
     const text = await res.text();
     console.error("POST /research failed:", res.status, text);
+    if (res.status === 401) {
+      console.error("If the server uses API_KEY, run: API_KEY=your-key node test/e2e/research.e2e.mjs");
+    }
     process.exit(1);
   }
 
