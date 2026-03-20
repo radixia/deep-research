@@ -51,13 +51,17 @@ function summarizeToolResponse(result: ToolResult): { outputPreview?: string } {
 }
 
 export class ResearchOrchestrator {
+  private readonly depthConfig: DepthConfig;
+
   constructor(
     private readonly tools: Record<string, ToolClient>,
     private readonly fusion: FusionEngine,
-    private readonly depthConfig: DepthConfig = DEFAULT_DEPTH_CONFIG,
+    depthConfig?: DepthConfig,
     private readonly anthropicApiKey?: string,
     private readonly onToolEvent?: (e: ToolOrchestratorEvent) => void,
-  ) {}
+  ) {
+    this.depthConfig = depthConfig ?? DEFAULT_DEPTH_CONFIG;
+  }
 
   private async getSubQueries(query: string, signal?: AbortSignal): Promise<string[]> {
     if (this.anthropicApiKey) {

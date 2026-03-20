@@ -9,17 +9,11 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@deep-research/sdk": "workspace:*",
     "@deep-research/types": "workspace:*",
     "zod": "^3.23.0",
-    "@deep-research/orchestrator": "workspace:*",
-    "@deep-research/fusion": "workspace:*",
     "hono": "^4.5.0",
     "@hono/node-server": "^1.12.0",
-    "@deep-research/tools-manus": "workspace:*",
-    "@deep-research/tools-perplexity": "workspace:*",
-    "@deep-research/tools-tavily": "workspace:*",
-    "@deep-research/tools-firecrawl": "workspace:*",
-    "@deep-research/tools-brave": "workspace:*",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0"
   },

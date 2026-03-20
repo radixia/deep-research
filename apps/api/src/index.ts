@@ -2,14 +2,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { logger as pinoLogger } from "./logger.js";
-import { ResearchOrchestrator } from "@deep-research/orchestrator";
-import { FusionEngine } from "@deep-research/fusion";
-import { ManusClient, ManusTaskStore } from "@deep-research/tools-manus";
-import { PerplexityClient } from "@deep-research/tools-perplexity";
-import { TavilyClient } from "@deep-research/tools-tavily";
-import { FirecrawlClient } from "@deep-research/tools-firecrawl";
-import { BraveClient } from "@deep-research/tools-brave";
-import { ResearchQuerySchema } from "@deep-research/types";
+import {
+  createResearchOrchestrator,
+  ManusTaskStore,
+  ResearchQuerySchema,
+} from "@deep-research/sdk";
 import { config } from "./config.js";
 import { getApiKey, requireApiKey, checkRateLimit } from "./middleware.js";
 import { ManusWebhookPayloadSchema } from "./schemas.js";
@@ -29,25 +26,19 @@ import {
 
 const manusStore = new ManusTaskStore();
 
-// ── Clients ───────────────────────────────────────────────────────────────────
-
-const tools = {
-  manus: new ManusClient(
-    config.manusApiKey,
-    `${config.webhookBaseUrl}/webhooks/manus`,
+const orchestrator = createResearchOrchestrator(
+  {
+    manusApiKey: config.manusApiKey,
+    perplexityApiKey: config.perplexityApiKey,
+    tavilyApiKey: config.tavilyApiKey,
+    firecrawlApiKey: config.firecrawlApiKey,
+    braveApiKey: config.braveApiKey,
+    anthropicApiKey: config.anthropicApiKey,
+    webhookBaseUrl: config.webhookBaseUrl,
+  },
+  {
     manusStore,
-  ),
-  perplexity: new PerplexityClient(config.perplexityApiKey),
-  tavily: new TavilyClient(config.tavilyApiKey),
-  firecrawl: new FirecrawlClient(config.firecrawlApiKey),
-  brave: new BraveClient(config.braveApiKey),
-};
-const orchestrator = new ResearchOrchestrator(
-  tools,
-  new FusionEngine(),
-  undefined,
-  config.anthropicApiKey,
-  (evt) => {
+    onToolEvent: (evt) => {
     if (evt.phase === "invoke") {
       pinoLogger.info(
         {
@@ -74,6 +65,7 @@ const orchestrator = new ResearchOrchestrator(
         `tool ${evt.tool} response`,
       );
     }
+  },
   },
 );
 

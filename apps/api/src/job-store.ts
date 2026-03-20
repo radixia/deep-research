@@ -10,7 +10,18 @@ export interface ResearchJob {
   createdAt: Date;
 }
 
+const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
+const EVICT_INTERVAL_MS = 10 * 60 * 1000; // every 10 min
+
 const jobs = new Map<string, ResearchJob>();
+let evictTimer: ReturnType<typeof setInterval> | null = null;
+
+function evictExpired(): void {
+  const cutoff = Date.now() - JOB_TTL_MS;
+  for (const [id, job] of jobs) {
+    if (job.createdAt.getTime() < cutoff) jobs.delete(id);
+  }
+}
 
 export function createJob(): string {
   const jobId = crypto.randomUUID();
@@ -19,6 +30,10 @@ export function createJob(): string {
     status: "pending",
     createdAt: new Date(),
   });
+  if (evictTimer == null) {
+    evictTimer = setInterval(evictExpired, EVICT_INTERVAL_MS);
+    evictTimer.unref?.();
+  }
   return jobId;
 }
 
@@ -44,5 +59,13 @@ export function setJobFailed(jobId: string, error: string): void {
   if (job) {
     job.status = "failed";
     job.error = error;
+  }
+}
+
+/** Stop eviction timer (e.g. on graceful shutdown). */
+export function destroyJobStore(): void {
+  if (evictTimer) {
+    clearInterval(evictTimer);
+    evictTimer = null;
   }
 }

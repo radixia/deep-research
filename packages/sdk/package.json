@@ -1,0 +1,55 @@
+{
+  "name": "@deep-research/sdk",
+  "version": "0.1.0",
+  "description": "Deep research as a library: orchestrator, fusion, tool clients, and factories for embedding in agent apps",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --external @deep-research/types --external @deep-research/fusion --external @deep-research/orchestrator --external @deep-research/tools-manus --external @deep-research/tools-perplexity --external @deep-research/tools-tavily --external @deep-research/tools-firecrawl --external @deep-research/tools-brave"
+  },
+  "dependencies": {
+    "@deep-research/fusion": "workspace:*",
+    "@deep-research/orchestrator": "workspace:*",
+    "@deep-research/types": "workspace:*",
+    "@deep-research/tools-brave": "workspace:*",
+    "@deep-research/tools-firecrawl": "workspace:*",
+    "@deep-research/tools-manus": "workspace:*",
+    "@deep-research/tools-perplexity": "workspace:*",
+    "@deep-research/tools-tavily": "workspace:*"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/radixia/deep-research.git",
+    "directory": "packages/sdk"
+  },
+  "keywords": [
+    "research",
+    "agents",
+    "orchestrator",
+    "tavily",
+    "perplexity",
+    "manus",
+    "firecrawl"
+  ]
+}
