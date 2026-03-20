@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().min(1).default(3000),
   APP_ENV: z.enum(["development", "production"]).default("development"),
   API_KEY: z.string().optional(),
+  JOB_STORE_PATH: z.string().min(1).default("output/jobs.json"),
 });
 
 const ProductionEnvSchema = EnvSchema.refine(
@@ -37,6 +38,7 @@ function loadConfig(): z.infer<typeof EnvSchema> {
     PORT: process.env["PORT"],
     APP_ENV: process.env["APP_ENV"],
     API_KEY: process.env["API_KEY"],
+    JOB_STORE_PATH: process.env["JOB_STORE_PATH"],
   });
 
   if (!parsed.success) {
@@ -66,4 +68,5 @@ export const config = {
   port: raw.PORT,
   env: raw.APP_ENV,
   apiKey: raw.API_KEY ?? "",
+  jobStorePath: raw.JOB_STORE_PATH,
 } as const;
