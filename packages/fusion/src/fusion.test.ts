@@ -39,8 +39,8 @@ describe("FusionEngine", () => {
     ];
     const out = engine.merge("q", results);
     expect(out.sources).toHaveLength(1);
-    expect(out.sources[0].url).toBe("https://a.com");
-    expect(out.sources[0].credibilityScore).toBeGreaterThan(0.5);
+    expect(out.sources[0]!.url).toBe("https://a.com");
+    expect(out.sources[0]!.credibilityScore).toBeGreaterThan(0.5);
   });
 
   it("ranks sources by credibility", () => {
@@ -69,8 +69,8 @@ describe("FusionEngine", () => {
       },
     ];
     const out = engine.merge("q", results);
-    expect(out.sources[0].url).toBe("https://high.com");
-    expect(out.sources[1].url).toBe("https://low.com");
+    expect(out.sources[0]!.url).toBe("https://high.com");
+    expect(out.sources[1]!.url).toBe("https://low.com");
   });
 
   it("builds summary from highest-priority tool with text output", () => {
