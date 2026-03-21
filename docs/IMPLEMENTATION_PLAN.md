@@ -1,162 +1,140 @@
-# Implementation Plan: Library / Tool / Subagent Expectations
+# Implementation Plan (Spec-Aligned Best Architecture)
 
-This plan translates the target expectations into an implementation sequence that can be executed incrementally.
+This plan implements the architecture defined in `docs/BEST_ARCHITECTURE.md`, derived from `agentic-deep-research-spec`.
 
-## 1) Target capabilities
+## 1) Target architecture goals
 
-The solution must:
+1. Hybrid adaptive system: router + pipeline mode + agent mode.
+2. Direct provider selection with parallel fanout.
+3. Small-model synthesis followed by citation verification.
+4. Durable asynchronous jobs and artifact persistence in `output/`.
+5. OpenTelemetry observability with non-blocking pino fallback.
 
-1. Run as a **library**, **tool (HTTP API)**, or **subagent component**.
-2. Support **pipeline mode** and **agent mode**.
-3. Support **direct mode** where caller specifies providers; provider jobs run in parallel.
-4. Condense multi-provider results with a **small LLM** into one ranked answer.
-5. Launch and store all jobs asynchronously.
-6. Return results to caller and persist local artifacts in an `output/` folder.
-7. Emit observability to **OpenTelemetry**, with fallback to console/pino logs.
+## 2) Architecture decisions locked for implementation
 
-## 2) Baseline (already present)
+1. **Tiered routing**
+   - Route each query to `simple | medium | complex | open_ended`.
+   - Tier controls budget, mode defaults, and max concurrency.
 
-- Async API job pattern exists (`POST /research` + `GET /research/:jobId`).
-- SDK factory exists (`createResearchOrchestrator`).
-- Provider clients exist (Manus/Perplexity/Tavily/Firecrawl/Brave).
-- Fusion exists for ranking and confidence.
-- Structured logging exists via pino.
+2. **Hybrid execution**
+   - Pipeline mode for simple/medium by default.
+   - Agent mode for complex/open-ended or explicit caller selection.
+   - Dynamic outline enabled for open-ended report tasks.
+
+3. **Evidence-first writing**
+   - Memory bank stores normalized evidence entries.
+   - Writer/synthesizer can only use retrieved evidence slices.
+
+4. **Citation verification pass**
+   - Separate verifier step validates claim-source support.
+   - Unverified claims are explicitly marked.
+
+5. **Durable async by default**
+   - API and SDK use consistent job lifecycle contracts.
+   - Repository abstraction allows in-memory and durable adapters.
 
 ## 3) Workstreams
 
-### WS1 — Contract and execution model
-- Extend `ResearchQuery` with:
-  - `mode: "pipeline" | "agent"`
-  - `providers?: ProviderId[]`
-  - `execution?: { parallel?: boolean; maxConcurrency?: number }`
-  - `synthesizer?: { enabled?: boolean; model?: string }`
-  - `persistOutput?: boolean`
-  - `outputPath?: string`
-- Introduce `ExecutionPlan` type (normalized execution instructions).
-- Add contract tests to enforce backward compatibility.
+## WS1 - Contract and planner foundations
+- Extend request schema:
+  - `mode`, `providers`, `tier`, `budget`, `execution`, `persistOutput`, `outputPath`
+- Add internal `ExecutionPlan` and `ResearchState` contracts.
+- Add compatibility shims for existing `depth` behavior.
 
-### WS2 — Direct pipeline mode
-- Add `runDirect()` in orchestrator.
-- Build a scheduler for provider fan-out/fan-in with bounded concurrency.
-- Keep existing depth routes as default fallback when `providers` is omitted.
+## WS2 - Router and direct parallel scheduler
+- Implement router for complexity tier prediction.
+- Add orchestrator path for direct provider selection.
+- Add bounded concurrency scheduler for provider fanout/fanin.
 
-### WS3 — Synthesis layer (small LLM)
-- Add a dedicated synthesizer component:
-  - input: `query + normalized tool results + ranked citations`
-  - output: `final answer + citation-backed ranking`
-- Preserve deterministic fallback when LLM is disabled/unavailable.
+## WS3 - Synthesis and citation verification
+- Add small-model synthesizer contract:
+  - input: ranked evidence and tool outputs
+  - output: final answer + source-linked claims
+- Add citation verifier post-pass before finalization.
 
-### WS4 — Agent mode
-- Add an agent runner (`packages/agent` recommended) with:
-  - planner step,
-  - tool invocation step,
-  - evaluate/continue step,
-  - stop criteria (`maxIterations`, confidence threshold, no-new-evidence).
-- Reuse same provider adapters and synthesis endpoint.
+## WS4 - Agent runtime and dynamic outline
+- Introduce `packages/agent`:
+  - planner -> tool-use -> reflect -> iterate loop
+- Introduce memory bank + outline state:
+  - outline section status and evidence links
+- Add stop criteria:
+  - max iterations, confidence threshold, budget floor.
 
-### WS5 — Job persistence and output artifacts
-- Abstract job storage behind repository interface:
+## WS5 - Durable jobs and local artifacts
+- Build `JobRepository` abstraction:
   - in-memory adapter (dev),
-  - durable adapter (Redis/Postgres/file-backed).
-- Persist artifacts under `output/`:
-  - `output/<jobId>.json` (full result),
-  - `output/<jobId>.md` (rendered report),
-  - optional `output/<jobId>/<tool>.json` (raw captures).
+  - Redis/Postgres adapter (durable).
+- Add artifact writer:
+  - `output/<jobId>.json`, optional markdown and per-tool raw files.
+- Add checkpoint/resume for long-running sessions.
 
-### WS6 — Observability
-- Add tracing spans:
-  - request/job span,
-  - per-tool invocation span,
-  - synthesis span,
-  - persistence span.
-- Add OTel exporter wiring + disable/fallback behavior.
-- Keep pino logs as always-available fallback.
+## WS6 - Observability and reliability
+- Add OTel traces and metrics for:
+  - routing, provider calls, synthesis, citation pass, persistence.
+- Keep pino logs as fallback path.
+- Add retry/backoff and timeout policy enforcement per provider.
 
-## 4) Phased delivery sequence
+## 4) Phase plan with concrete exits
 
-## Phase A — Contracts + direct execution kernel
-**Scope**
-- Schema updates, execution-plan normalization, direct mode scheduler.
+## Phase A - Contracts + Router + Direct Mode
+**Deliver**
+- schema upgrades, router, direct provider scheduler.
 
-**Exit criteria**
-- API accepts provider list and executes selected providers in parallel.
-- SDK can invoke same direct execution path.
-- Existing depth mode behavior remains functional.
+**Exit**
+- Caller can specify providers and execute in parallel.
+- Existing API requests remain backward compatible.
 
-## Phase B — LLM condensation
-**Scope**
-- Add synthesizer module and integrate post-fusion summarization.
+## Phase B - Synthesis + Citation Verifier
+**Deliver**
+- small-model synthesis module + claim-source verification pass.
 
-**Exit criteria**
-- For multi-provider runs, final response includes one consolidated ranked answer.
-- Synthesizer can be disabled; non-LLM fallback remains stable.
+**Exit**
+- Response includes one consolidated answer with verified citations.
+- Graceful fallback works if synthesis model is unavailable.
 
-## Phase C — Agent mode + subagent integration
-**Scope**
-- Add planner loop and iterative tool-use flow.
-- Introduce subagent wrapper API and package exports.
+## Phase C - Agent Mode + Dynamic Outline
+**Deliver**
+- planner loop, reflection/gap handling, memory bank, outline lifecycle.
 
-**Exit criteria**
-- Request with `mode=agent` executes planner loop and returns persisted result.
-- Subagent entrypoint can be invoked from a parent agent runtime.
+**Exit**
+- `mode=agent` runs iterative research and produces evidence-linked output.
+- Open-ended report tasks use dynamic outline path.
 
-## Phase D — Durable jobs + output folder persistence
-**Scope**
-- Durable repository adapter + output writer.
+## Phase D - Durable Persistence + Output Artifacts
+**Deliver**
+- durable job store adapter + output writer + checkpoint recovery.
 
-**Exit criteria**
-- Jobs survive process restarts (with durable adapter enabled).
-- Every completed/failed job has output artifacts in configured path.
+**Exit**
+- Jobs survive restarts and artifact files are generated consistently.
 
-## Phase E — OpenTelemetry + reliability hardening
-**Scope**
-- OTel instrumentation and exporter config.
-- Retry, timeout, and error-budget controls on provider calls.
+## Phase E - OTel + Operational Hardening
+**Deliver**
+- telemetry export, dashboards, retry policies, resilience checks.
 
-**Exit criteria**
-- Traces visible in configured OTel backend.
-- If OTel is unavailable, execution continues with pino/console fallback.
+**Exit**
+- Traces and metrics are observable end-to-end.
+- Telemetry failures do not impact request success.
 
-## 5) Technical design decisions to lock early
+## 5) Validation plan
 
-1. **Provider registry**
-   - canonical IDs (`manus`, `perplexity`, `tavily`, `firecrawl`, `brave`)
-   - one adapter interface for both pipeline and agent runner
+- **Contract tests**: request compatibility and mode-specific schema guarantees.
+- **Unit tests**: router, planner, scheduler, synthesizer, verifier, artifact writer.
+- **Integration tests**:
+  - pipeline direct mode,
+  - agent mode,
+  - durable resume path,
+  - citation verification correctness.
+- **Operational tests**:
+  - load and budget exhaustion behavior,
+  - telemetry outage fallback behavior.
 
-2. **Execution plan normalization**
-   - transform request into internal graph/list before any provider call
-   - single place for defaults, validation, and compatibility logic
+## 6) Deliverables checklist
 
-3. **Result persistence model**
-   - store pointers to artifact files and metadata in job record
-   - avoid oversized payloads in durable store
-
-4. **Synthesis constraints**
-   - ensure every synthesized claim references source citations
-   - provide strict JSON schema output from synthesizer for deterministic parsing
-
-## 6) Validation strategy
-
-- **Unit tests**
-  - execution planner
-  - scheduler parallelism/limits
-  - synthesizer parser and fallback
-  - output writer and path safety
-- **Integration tests**
-  - end-to-end job lifecycle in pipeline mode
-  - end-to-end job lifecycle in agent mode
-  - restart recovery with durable store adapter
-- **Contract tests**
-  - backward compatibility for existing request/response shapes
-  - mode-specific response guarantees
-
-## 7) Deliverables checklist
-
-- [ ] Extended request/response contracts in `packages/types`
-- [ ] Direct-mode scheduler in orchestrator
-- [ ] Synthesizer module with provider-agnostic input contract
-- [ ] Agent runner package and public API
-- [ ] Durable job repository interface + adapter
-- [ ] Local output artifact writer
-- [ ] OpenTelemetry instrumentation and config
-- [ ] Updated docs and runnable examples for all modes
+- [ ] `ResearchQuery` and `ResearchState` schema upgrades (`packages/types`)
+- [ ] Router and direct scheduler (`packages/orchestrator`)
+- [ ] Synthesizer + citation verifier modules
+- [ ] Agent runtime package with dynamic outline support
+- [ ] Durable `JobRepository` + checkpointing
+- [ ] Output artifact persistence under `output/`
+- [ ] OTel instrumentation + fallback logging
+- [ ] Updated API/SDK examples for pipeline and agent modes

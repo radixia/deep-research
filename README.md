@@ -136,7 +136,12 @@ deep-research/
 │       ├── tavily/              → Search API client with multi-query support
 │       └── firecrawl/           → Search + schema-driven extraction client
 └── docs/
-    ├── ARCHITECTURE.md          → Detailed architecture documentation
+    ├── ARCHITECTURE.md          → As-implemented architecture documentation
+    ├── BEST_ARCHITECTURE.md     → Spec-aligned target architecture
+    ├── GAP_ANALYSIS.md          → Current vs target gap analysis
+    ├── IMPLEMENTATION_PLAN.md   → Phased implementation plan
+    ├── USER_STORIES.md          → Epic-level backlog stories
+    ├── USER_STORIES_PER_EPIC.md → One canonical story per epic
     └── BLUEPRINT.md             → Original design blueprint
 ```
 
