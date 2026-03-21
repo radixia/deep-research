@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decompose } from "./decompose";
+import { decompose } from "./decompose.js";
 
 describe("decompose", () => {
   it("returns query plus three templated sub-queries by default", () => {

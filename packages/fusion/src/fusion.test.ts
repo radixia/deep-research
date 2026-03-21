@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FusionEngine } from "./index";
+import { FusionEngine } from "./index.js";
 import type { Citation, ToolResult } from "@deep-research/types";
 
 const baseCitation = (

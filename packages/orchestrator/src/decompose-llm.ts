@@ -17,8 +17,7 @@ export async function decomposeWithLlm(
       model: "claude-3-5-haiku-20241022",
       max_tokens: 256,
       messages: [{ role: "user", content: SUB_QUERIES_PROMPT + query }],
-      signal,
-    });
+    }, { signal });
     const text =
       msg.content?.find((b) => b.type === "text")?.type === "text"
         ? (msg.content.find((b) => b.type === "text") as { text: string }).text

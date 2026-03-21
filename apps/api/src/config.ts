@@ -40,13 +40,13 @@ function loadConfig(): z.infer<typeof EnvSchema> {
   });
 
   if (!parsed.success) {
-    const msg = parsed.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
+    const msg = parsed.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
     throw new Error(`Invalid config: ${msg}`);
   }
 
   const productionCheck = ProductionEnvSchema.safeParse(parsed.data);
   if (!productionCheck.success) {
-    throw new Error(productionCheck.error.errors[0]?.message ?? "Production config invalid");
+    throw new Error(productionCheck.error.issues[0]?.message ?? "Production config invalid");
   }
 
   return parsed.data;

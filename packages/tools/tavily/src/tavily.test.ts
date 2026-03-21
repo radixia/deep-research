@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { TavilyClient } from "./index";
+import { TavilyClient } from "./index.js";
 
 describe("TavilyClient", () => {
   beforeEach(() => {

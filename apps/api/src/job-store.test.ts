@@ -5,7 +5,7 @@ import {
   setJobRunning,
   setJobCompleted,
   setJobFailed,
-} from "./job-store";
+} from "./job-store.js";
 
 describe("job-store", () => {
   it("createJob returns a UUID and getJob returns the job", () => {
