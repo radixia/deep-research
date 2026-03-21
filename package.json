@@ -21,12 +21,19 @@
     "packages/tools/*",
     "apps/*"
   ],
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
   "devDependencies": {
+    "@eslint/js": "^9.39.3",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.3.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.57.1",
     "vitest": "^2.0.0"
   }
 }
