@@ -5,6 +5,7 @@
 ### Overview
 
 This is a TypeScript monorepo (pnpm workspaces) for a Deep Research Agent API. See `CLAUDE.md` and `README.md` for full architecture and commands.
+For cloud-agent onboarding and practical run/test workflows, start with `docs/skills/cloud-agent-starter.md`.
 
 ### Services
 
