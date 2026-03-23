@@ -96,7 +96,7 @@ export class ResearchOrchestrator {
         createdAt,
         completedAt: new Date(),
       };
-    } catch (err) {
+    } catch {
       return {
         query: request.query,
         depth: request.depth,
@@ -114,7 +114,7 @@ export class ResearchOrchestrator {
     name: string,
     query: string,
     opts?: { maxResults?: number; count?: number; searchLang?: string },
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<ToolResult> {
     const queryPreview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
     const optsSummary =
@@ -185,12 +185,14 @@ export class ResearchOrchestrator {
     const { query, language } = request;
     const subQueries = await this.getSubQueries(query, signal);
     const mainResults = await Promise.all(
-      standard.main.map((name) => this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal))
+      standard.main.map((name) =>
+        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+      ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        standard.subQueries.map((name) => this.runTool(name, q, undefined, signal))
-      )
+        standard.subQueries.map((name) => this.runTool(name, q, undefined, signal)),
+      ),
     );
     return [...mainResults, ...subResults];
   }
@@ -200,15 +202,17 @@ export class ResearchOrchestrator {
     const { query, language } = request;
     const subQueries = await this.getSubQueries(query, signal);
     const slowPromise = Promise.all(
-      deep.slow.map((name) => this.runTool(name, query, undefined, signal))
+      deep.slow.map((name) => this.runTool(name, query, undefined, signal)),
     );
     const mainResults = await Promise.all(
-      deep.main.map((name) => this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal))
+      deep.main.map((name) =>
+        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+      ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        deep.subQueries.map((name) => this.runTool(name, q, undefined, signal))
-      )
+        deep.subQueries.map((name) => this.runTool(name, q, undefined, signal)),
+      ),
     );
     const slow = await slowPromise;
     return [...mainResults, ...subResults, ...slow];

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { TavilyClient } from "./index";
+import { TavilyClient } from "./index.js";
 
 describe("TavilyClient", () => {
   beforeEach(() => {
@@ -34,8 +34,8 @@ describe("TavilyClient", () => {
     expect(result.tool).toBe("tavily");
     expect(result.success).toBe(true);
     expect(result.citations).toHaveLength(1);
-    expect(result.citations[0].url).toBe("https://example.com");
-    expect(result.citations[0].sourceTool).toBe("tavily");
+    expect(result.citations[0]!.url).toBe("https://example.com");
+    expect(result.citations[0]!.sourceTool).toBe("tavily");
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
