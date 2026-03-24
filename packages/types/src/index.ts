@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export const ResearchDepth = z.enum(["quick", "standard", "deep"]);
+export const ResearchDepth = z.enum(["quick", "standard", "deep", "agentic"]);
 export type ResearchDepth = z.infer<typeof ResearchDepth>;
 
 export const ResearchStatus = z.enum(["pending", "running", "completed", "failed"]);

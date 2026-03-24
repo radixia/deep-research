@@ -1,8 +1,8 @@
 # Deep Research Agent
 
-**One API. Four research engines. Three depth modes.**
+**One API. Five research engines. Three depth modes.**
 
-A TypeScript monorepo that orchestrates [Manus](https://manus.im), [Perplexity](https://perplexity.ai), [Tavily](https://tavily.com), and [Firecrawl](https://firecrawl.dev) into a unified deep research pipeline — with deduplicated citations, credibility ranking, and confidence scoring.
+A TypeScript monorepo that orchestrates [Manus](https://manus.im), [Perplexity](https://perplexity.ai), [Tavily](https://tavily.com), [Firecrawl](https://firecrawl.dev), and [Brave Search](https://brave.com/search/api/) into a unified deep research pipeline — with deduplicated citations, credibility ranking, and confidence scoring. Use it as an HTTP API or as a library via `@deep-research/sdk`.
 
 ```
 POST /research { "query": "...", "depth": "quick" }
@@ -14,44 +14,50 @@ That's it. One endpoint. The orchestrator decides which tools to invoke, runs th
 
 ## How it works
 
-```
-                        POST /research
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │   ORCHESTRATOR   │
-                    │  depth routing   │
-                    │  query decomp    │
-                    └────────┬────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼              ▼
-         ┌─────────┐  ┌───────────┐  ┌─────────┐  ┌───────────┐
-         │  Manus  │  │Perplexity │  │  Tavily  │  │ Firecrawl │
-         │  agent  │  │ synthesis │  │ grounding│  │ extraction│
-         └────┬────┘  └─────┬─────┘  └────┬────┘  └─────┬─────┘
-              │             │             │              │
-              └──────────────┼──────────────┘              │
-                             ▼                             │
-                    ┌─────────────────┐◄───────────────────┘
-                    │  FUSION ENGINE   │
-                    │  dedup · rank    │
-                    │  cite · score    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                      ResearchResult
-                    { summary, sources[],
-                      confidenceScore }
+Diagrams are defined in [docs/diagrams/](docs/diagrams/) as Mermaid (`.mmd`) and rendered below.
+
+```mermaid
+flowchart TB
+    subgraph input[" "]
+        A["POST /research<br/>{ query, depth }"]
+    end
+    subgraph orchestrator["Orchestrator"]
+        B["depth routing<br/>query decomposition"]
+    end
+    subgraph tools["Research tools"]
+        T1["Manus<br/>autonomous agent"]
+        T2["Perplexity<br/>synthesis"]
+        T3["Tavily<br/>grounding"]
+        T4["Firecrawl<br/>extraction"]
+        T5["Brave<br/>search"]
+    end
+    subgraph fusion["Fusion engine"]
+        C["dedup · rank<br/>cite · score"]
+    end
+    subgraph output[" "]
+        D["ResearchResult<br/>summary, sources[], confidenceScore"]
+    end
+    A --> B
+    B --> T1
+    B --> T2
+    B --> T3
+    B --> T4
+    B --> T5
+    T1 --> C
+    T2 --> C
+    T3 --> C
+    T4 --> C
+    T5 --> C
+    C --> D
 ```
 
 ### Depth modes
 
 | Mode | Tools | Latency | Best for |
 |------|-------|---------|----------|
-| **`quick`** | Perplexity + Tavily | ~10–30s | Fast fact-checks, simple questions |
-| **`standard`** | Perplexity + Tavily (sub-queries) + Firecrawl | ~1 min | Thorough research with structured extraction |
-| **`deep`** | All four — Manus async + fast tools in parallel | ~10–15 min | Comprehensive multi-source reports |
+| **`quick`** | Perplexity + Tavily + Brave | ~10–30s | Fast fact-checks, simple questions |
+| **`standard`** | Perplexity + Firecrawl + Brave (main) + Tavily (sub-queries) | ~1 min | Thorough research with structured extraction |
+| **`deep`** | All five — Manus async + fast tools in parallel | ~10–15 min | Comprehensive multi-source reports |
 
 Each tool plays to its strength:
 
@@ -59,6 +65,7 @@ Each tool plays to its strength:
 - **Perplexity** — real-time synthesis with inline citations, great for overviews
 - **Tavily** — fast AI-optimized search with relevance scoring, ideal for grounding claims
 - **Firecrawl** — structured data extraction from web pages, schema-driven output
+- **Brave Search** — web search API with broad coverage, good for breadth and fallback
 
 ---
 
@@ -70,7 +77,7 @@ pnpm install
 
 # Configure API keys
 cp .env.example .env
-# Fill in: MANUS_API_KEY, PERPLEXITY_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY
+# Fill in: MANUS_API_KEY, PERPLEXITY_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY, BRAVE_API_KEY
 
 # Build and run
 pnpm build
@@ -90,7 +97,7 @@ curl -s http://localhost:3000/research \
   -H "Content-Type: application/json" \
   -d '{"query": "Compare LangGraph vs CrewAI for production use", "depth": "standard"}' | jq
 
-# Deep — all four tools including Manus autonomous agent
+# Deep — all five tools including Manus autonomous agent
 curl -s http://localhost:3000/research \
   -H "Content-Type: application/json" \
   -d '{"query": "European AI regulation impact on LLM API market", "depth": "deep"}' | jq
@@ -122,23 +129,56 @@ curl -s http://localhost:3000/research \
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph apps["apps"]
+        API["api<br/>Hono HTTP server"]
+    end
+    subgraph packages["packages"]
+        SDK["sdk<br/>createResearchOrchestrator"]
+        TYPES["types"]
+        ORCH["orchestrator"]
+        FUSION["fusion"]
+        subgraph tools["tools"]
+            M["manus"] P["perplexity"] T["tavily"] F["firecrawl"] B["brave"]
+        end
+    end
+    subgraph test["test"]
+        E2E["e2e"]
+    end
+    API --> SDK
+    SDK --> ORCH
+    SDK --> FUSION
+    SDK --> TYPES
+    ORCH --> M
+    ORCH --> P
+    ORCH --> T
+    ORCH --> F
+    ORCH --> B
+    FUSION --> TYPES
+    E2E -.->|hits API| API
 ```
-deep-research/
-├── apps/
-│   └── api/                     → Hono HTTP server (entrypoint)
-├── packages/
-│   ├── types/                   → Zod schemas + shared TypeScript types
-│   ├── orchestrator/            → Depth routing, query decomposition, tool dispatch
-│   ├── fusion/                  → Dedup, credibility ranking, confidence scoring
-│   └── tools/
-│       ├── manus/               → Async webhook-first client + in-process task store
-│       ├── perplexity/          → Sonar deep-research model client
-│       ├── tavily/              → Search API client with multi-query support
-│       └── firecrawl/           → Search + schema-driven extraction client
-└── docs/
-    ├── ARCHITECTURE.md          → Detailed architecture documentation
-    └── BLUEPRINT.md             → Original design blueprint
+
+| Path | Role |
+|------|------|
+| `apps/api/` | Hono HTTP server (entrypoint) |
+| `packages/sdk/` | Library: `createResearchOrchestrator`, tool clients, types |
+| `packages/types/` | Zod schemas + shared TypeScript types |
+| `packages/orchestrator/` | Depth routing, query decomposition, tool dispatch |
+| `packages/fusion/` | Dedup, credibility ranking, confidence scoring |
+| `packages/tools/*` | manus, perplexity, tavily, firecrawl, brave |
+| `test/e2e/` | E2E tests (API must be running; API_KEY if required) |
+| `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [BLUEPRINT.md](docs/BLUEPRINT.md), [diagrams/](docs/diagrams/) |
+
+### Using as a library
+
+Install the SDK in your agent or app:
+
+```bash
+pnpm add @deep-research/sdk
 ```
+
+Use `createResearchOrchestrator` with your API keys and optional `ManusTaskStore`; run `orchestrator.research(request)` for the same pipeline as the HTTP API. See `packages/sdk/src/index.ts` for exports and [CLAUDE.md](CLAUDE.md) for the factory API.
 
 ### Key design decisions
 
@@ -157,6 +197,7 @@ The fusion engine applies per-tool credibility weights based on source quality:
 | Perplexity | 0.85 | Real-time web grounding with citations |
 | Firecrawl | 0.80 | Direct content extraction, less filtered |
 | Tavily | 0.75 | Fast search, good breadth but lower per-result depth |
+| Brave | 0.75 | Web search API, broad coverage |
 
 ---
 
@@ -192,9 +233,12 @@ Receives async results from Manus. Verifies HMAC signature when `MANUS_WEBHOOK_S
 | `PERPLEXITY_API_KEY` | Yes | Perplexity API key |
 | `TAVILY_API_KEY` | Yes | Tavily API key |
 | `FIRECRAWL_API_KEY` | Yes | Firecrawl API key |
+| `BRAVE_API_KEY` | Yes | Brave Search API key ([Brave API](https://brave.com/search/api/)) |
 | `MANUS_WEBHOOK_SECRET` | Recommended | HMAC secret for webhook verification |
 | `WEBHOOK_BASE_URL` | For deep mode | Public URL where Manus delivers results |
 | `PORT` | No (default: 3000) | HTTP server port |
+| `JOB_STORE_PATH` | No (default: `output/jobs.json`) | Path for persisted job state; directory (e.g. `output/`) is created if missing |
+| `API_KEY` | For production | When set, requests must send `x-api-key` header; required if `APP_ENV=production` |
 
 ---
 
@@ -204,10 +248,13 @@ Receives async results from Manus. Verifies HMAC signature when `MANUS_WEBHOOK_S
 pnpm install          # Install all workspace packages
 pnpm build            # Build all packages
 pnpm dev              # Start API in watch mode
-pnpm test             # Run vitest across all packages
+pnpm test             # Run Vitest unit tests
+pnpm test:e2e         # E2E research test (requires API running: pnpm dev; set API_KEY if server uses it)
 pnpm lint             # ESLint check
 pnpm typecheck        # TypeScript type check
 ```
+
+Job state is persisted under `./output` by default (`JOB_STORE_PATH`); `output/` is in `.gitignore`.
 
 ### Stack
 
@@ -229,7 +276,7 @@ pnpm typecheck        # TypeScript type check
 - [ ] Retry with exponential backoff on tool clients
 - [ ] Langfuse tracing for observability
 - [ ] Authentication + rate limiting
-- [ ] Exa.ai as 5th tool (semantic search)
+- [ ] Exa.ai as additional tool (semantic search)
 - [ ] Agentic orchestrator — LLM planner replaces fixed routing
 - [ ] Temporal workflows for durable execution
 

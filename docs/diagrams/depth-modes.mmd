@@ -1,0 +1,27 @@
+%% Depth modes and tool selection
+%% Renders in GitHub/GitLab when used in a ```mermaid block.
+
+flowchart LR
+    subgraph quick["quick ~10–30s"]
+        Q1["Perplexity"]
+        Q2["Tavily"]
+        Q3["Brave"]
+    end
+
+    subgraph standard["standard ~1 min"]
+        S1["Perplexity"]
+        S2["Firecrawl"]
+        S3["Brave"]
+        S4["Tavily<br/>sub-queries"]
+    end
+
+    subgraph deep["deep ~10–15 min"]
+        D1["Perplexity"]
+        D2["Firecrawl"]
+        D3["Brave"]
+        D4["Tavily<br/>sub-queries"]
+        D5["Manus<br/>async"]
+    end
+
+    quick --> standard
+    standard --> deep

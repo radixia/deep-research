@@ -30,8 +30,10 @@ export { FusionEngine, type FusionResult, type MergeOptions } from "@deep-resear
 
 export {
   ResearchOrchestrator,
+  runAgenticResearch,
   type DepthConfig,
   type ToolOrchestratorEvent,
+  type RunAgenticOptions,
 } from "@deep-research/orchestrator";
 
 export { ManusClient, ManusTaskStore } from "@deep-research/tools-manus";

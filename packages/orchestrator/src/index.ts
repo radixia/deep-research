@@ -19,12 +19,14 @@ const DEFAULT_DEPTH_CONFIG: DepthConfig = {
 export type ToolOrchestratorEvent =
   | {
       phase: "invoke";
+      invocationId?: string;
       tool: string;
       queryPreview: string;
       opts?: { maxResults?: number; count?: number; searchLang?: string };
     }
   | {
       phase: "response";
+      invocationId?: string;
       tool: string;
       queryPreview: string;
       success: boolean;
@@ -73,6 +75,44 @@ export class ResearchOrchestrator {
   async research(request: ResearchQuery, signal?: AbortSignal): Promise<ResearchResult> {
     const createdAt = new Date();
     try {
+      if (request.depth === "agentic") {
+        const { runAgenticResearch } = await import("./agentic-strands.js");
+        if (!this.anthropicApiKey) {
+          return {
+            query: request.query,
+            depth: "agentic",
+            status: "failed",
+            summary: "Agentic research requires ANTHROPIC_API_KEY.",
+            sources: [],
+            toolResults: [],
+            confidenceScore: 0,
+            createdAt,
+          };
+        }
+        return runAgenticResearch(request, {
+          anthropicApiKey: this.anthropicApiKey,
+          tools: this.tools,
+          fusion: this.fusion,
+          ...(signal !== undefined && { signal }),
+          ...(this.onToolEvent && {
+            onToolEvent: (evt: { tool: string; phase: "invoke" | "response"; queryPreview: string; success?: boolean; latencyMs?: number; citationsCount?: number }) => {
+                if (evt.phase === "invoke") {
+                  this.onToolEvent!({ phase: "invoke", tool: evt.tool, queryPreview: evt.queryPreview });
+                } else {
+                  this.onToolEvent!({
+                    phase: "response",
+                    tool: evt.tool,
+                    queryPreview: "",
+                    success: evt.success ?? false,
+                    latencyMs: evt.latencyMs ?? 0,
+                    citationsCount: evt.citationsCount ?? 0,
+                  });
+                }
+              },
+          }),
+        });
+      }
+
       const toolResults =
         request.depth === "quick"
           ? await this.runQuick(request, signal)
@@ -116,6 +156,7 @@ export class ResearchOrchestrator {
     opts?: { maxResults?: number; count?: number; searchLang?: string },
     signal?: AbortSignal
   ): Promise<ToolResult> {
+    const invocationId = crypto.randomUUID().slice(0, 8);
     const queryPreview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
     const optsSummary =
       opts && (opts.maxResults != null || opts.count != null || opts.searchLang != null)
@@ -128,6 +169,7 @@ export class ResearchOrchestrator {
 
     this.onToolEvent?.({
       phase: "invoke",
+      invocationId,
       tool: name,
       queryPreview,
       ...(optsSummary && Object.keys(optsSummary).length > 0 ? { opts: optsSummary } : {}),
@@ -145,6 +187,7 @@ export class ResearchOrchestrator {
       };
       this.onToolEvent?.({
         phase: "response",
+        invocationId,
         tool: name,
         queryPreview,
         success: false,
@@ -159,6 +202,7 @@ export class ResearchOrchestrator {
       const { outputPreview } = summarizeToolResponse(result);
       this.onToolEvent?.({
         phase: "response",
+        invocationId,
         tool: name,
         queryPreview,
         success: result.success,
@@ -216,3 +260,5 @@ export class ResearchOrchestrator {
 }
 
 export { decompose } from "./decompose.js";
+export { runAgenticResearch } from "./agentic-strands.js";
+export type { RunAgenticOptions } from "./agentic-strands.js";

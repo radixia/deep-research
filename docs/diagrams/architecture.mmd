@@ -1,0 +1,37 @@
+%% Repository and package structure
+%% Renders in GitHub/GitLab when used in a ```mermaid block.
+
+flowchart LR
+    subgraph apps["apps"]
+        API["api<br/>Hono HTTP server"]
+    end
+
+    subgraph packages["packages"]
+        SDK["sdk<br/>createResearchOrchestrator<br/>tool clients, types"]
+        TYPES["types<br/>Zod schemas"]
+        ORCH["orchestrator<br/>depth routing, tool dispatch"]
+        FUSION["fusion<br/>dedup, ranking, scoring"]
+        subgraph tools["tools"]
+            M["manus"]
+            P["perplexity"]
+            T["tavily"]
+            F["firecrawl"]
+            B["brave"]
+        end
+    end
+
+    subgraph test["test"]
+        E2E["e2e/<br/>research.e2e.mjs"]
+    end
+
+    API --> SDK
+    SDK --> ORCH
+    SDK --> FUSION
+    SDK --> TYPES
+    ORCH --> M
+    ORCH --> P
+    ORCH --> T
+    ORCH --> F
+    ORCH --> B
+    FUSION --> TYPES
+    E2E -.->|"hits API"| API

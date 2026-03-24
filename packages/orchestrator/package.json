@@ -4,15 +4,24 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" } },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.0",
+    "@deep-research/fusion": "workspace:*",
     "@deep-research/types": "workspace:*",
-    "@deep-research/fusion": "workspace:*"
+    "@strands-agents/sdk": "^0.7.0"
   },
-  "devDependencies": { "tsup": "^8.0.0", "typescript": "^5.5.0" }
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  }
 }

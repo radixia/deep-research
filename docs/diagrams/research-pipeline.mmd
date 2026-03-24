@@ -1,0 +1,40 @@
+%% Deep Research pipeline: request → orchestrator → tools → fusion → result
+%% Renders in GitHub/GitLab when used in a ```mermaid block.
+
+flowchart TB
+    subgraph input[" "]
+        A["POST /research<br/>{ query, depth }"]
+    end
+
+    subgraph orchestrator["Orchestrator"]
+        B["depth routing<br/>query decomposition"]
+    end
+
+    subgraph tools["Research tools"]
+        T1["Manus<br/>autonomous agent"]
+        T2["Perplexity<br/>synthesis"]
+        T3["Tavily<br/>grounding"]
+        T4["Firecrawl<br/>extraction"]
+        T5["Brave<br/>search"]
+    end
+
+    subgraph fusion["Fusion engine"]
+        C["dedup · rank<br/>cite · score"]
+    end
+
+    subgraph output[" "]
+        D["ResearchResult<br/>summary, sources[], confidenceScore"]
+    end
+
+    A --> B
+    B --> T1
+    B --> T2
+    B --> T3
+    B --> T4
+    B --> T5
+    T1 --> C
+    T2 --> C
+    T3 --> C
+    T4 --> C
+    T5 --> C
+    C --> D
