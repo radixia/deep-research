@@ -120,18 +120,31 @@ function sleep(ms: number): Promise<void> {
 }
 
 function extractCitations(text: string, sourceTool: Citation["sourceTool"]): Citation[] {
-  const citations: Citation[] = [];
+  const byUrl = new Map<string, { title: string; fromMarkdown: boolean }>();
   const mdLink = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   let match: RegExpExecArray | null;
   while ((match = mdLink.exec(text)) !== null) {
-    citations.push({
-      url: match[2]!,
-      title: match[1]!,
-      snippet: "",
-      sourceTool,
-      fetchedAt: new Date(),
-      credibilityScore: 0.5,
-    });
+    const url = match[2]!.replace(/\/$/, "");
+    if (!byUrl.has(url)) byUrl.set(url, { title: match[1]!.trim(), fromMarkdown: true });
   }
-  return citations;
+  // Plain URLs (not already captured as markdown links)
+  const plain = /(?:^|[\s(])(https?:\/\/[^\s\])"'<>]+)/g;
+  while ((match = plain.exec(text)) !== null) {
+    let url = match[1]!;
+    url = url.replace(/[.,;:!?)]+$/, "").replace(/\/$/, "");
+    if (!/^https?:\/\//i.test(url) || byUrl.has(url)) continue;
+    byUrl.set(url, { title: url, fromMarkdown: false });
+  }
+  const list = Array.from(byUrl.entries()).map(([url, meta]) => ({
+    url,
+    title: meta.title,
+    snippet: "",
+    sourceTool,
+    fetchedAt: new Date(),
+    credibilityScore: 0.5,
+  }));
+  return list.map((c, i) => ({
+    ...c,
+    credibilityScore: Math.min(1, 0.48 + (list.length - i - 1) * 0.03 + (c.title !== c.url ? 0.05 : 0)),
+  }));
 }

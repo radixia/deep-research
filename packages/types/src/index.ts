@@ -32,7 +32,7 @@ export const CitationSchema = z.object({
   url: z.string().url(),
   title: z.string(),
   snippet: z.string(),
-  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave"]),
+  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave", "exa"]),
   fetchedAt: z.coerce.date().default(() => new Date()),
   credibilityScore: z.number().min(0).max(1).default(0.5),
 });

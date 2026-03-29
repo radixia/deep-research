@@ -16,13 +16,15 @@
   "files": ["dist"],
   "sideEffects": false,
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --external @deep-research/types --external @deep-research/fusion --external @deep-research/orchestrator --external @deep-research/tools-manus --external @deep-research/tools-perplexity --external @deep-research/tools-tavily --external @deep-research/tools-firecrawl --external @deep-research/tools-brave"
+    "build": "tsup src/index.ts --format esm --dts --external @deep-research/types --external @deep-research/fusion --external @deep-research/orchestrator --external @deep-research/agent --external @deep-research/tools-manus --external @deep-research/tools-perplexity --external @deep-research/tools-tavily --external @deep-research/tools-firecrawl --external @deep-research/tools-brave --external @deep-research/tools-exa"
   },
   "dependencies": {
+    "@deep-research/agent": "workspace:*",
     "@deep-research/fusion": "workspace:*",
     "@deep-research/orchestrator": "workspace:*",
     "@deep-research/types": "workspace:*",
     "@deep-research/tools-brave": "workspace:*",
+    "@deep-research/tools-exa": "workspace:*",
     "@deep-research/tools-firecrawl": "workspace:*",
     "@deep-research/tools-manus": "workspace:*",
     "@deep-research/tools-perplexity": "workspace:*",

@@ -56,7 +56,7 @@ function createStrandsTools(
   clients: Record<string, ToolClient>,
   signal?: AbortSignal
 ): FunctionTool[] {
-  const toolNames = ["perplexity", "tavily", "firecrawl", "brave", "manus"] as const;
+  const toolNames = ["perplexity", "tavily", "firecrawl", "brave", "exa", "manus"] as const;
   return toolNames
     .filter((name) => clients[name])
     .map(
@@ -81,7 +81,7 @@ function createStrandsTools(
     );
 }
 
-const SYSTEM_PROMPT = `You are a research assistant. Your job is to answer the user's question by using the available search and lookup tools (perplexity, tavily, firecrawl, brave, manus). Call one or more tools as needed to gather information, then synthesize a clear, well-sourced answer. Prefer multiple tools when the question benefits from different perspectives. After gathering enough information, provide a final answer in markdown.`;
+const SYSTEM_PROMPT = `You are a research assistant. Your job is to answer the user's question by using the available search and lookup tools (perplexity, tavily, firecrawl, brave, exa, manus). Call one or more tools as needed to gather information, then synthesize a clear, well-sourced answer. Prefer multiple tools when the question benefits from different perspectives. After gathering enough information, provide a final answer in markdown.`;
 
 export interface RunAgenticOptions {
   anthropicApiKey: string;

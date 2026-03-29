@@ -32,6 +32,7 @@ const orchestrator = createResearchOrchestrator(
     tavilyApiKey: config.tavilyApiKey,
     firecrawlApiKey: config.firecrawlApiKey,
     braveApiKey: config.braveApiKey,
+    exaApiKey: config.exaApiKey,
     anthropicApiKey: config.anthropicApiKey,
     webhookBaseUrl: config.webhookBaseUrl,
   },
@@ -158,24 +159,26 @@ app.post("/research", async (c) => {
       "job.id": jobId,
     },
   });
-  orchestrator
-    .research(request, signal)
-    .then((result) => {
-      researchSpan.setAttribute("research.status", "completed");
-      researchSpan.setAttribute("research.sources_count", result.sources?.length ?? 0);
-      researchSpan.end();
-      pinoLogger.info({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "completed", sourcesCount: result.sources?.length ?? 0 }, "research completed");
-      return jobStore.setCompleted(jobId, result);
-    })
-    .catch((err) => {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      researchSpan.setAttribute("research.status", "failed");
-      researchSpan.setAttribute("research.error", errorMessage.slice(0, 500));
-      researchSpan.recordException(err instanceof Error ? err : new Error(errorMessage));
-      researchSpan.end();
-      pinoLogger.warn({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "failed", error: errorMessage.slice(0, 500) }, "research failed");
-      return jobStore.setFailed(jobId, errorMessage);
-    });
+  trackResearch(
+    orchestrator
+      .research(request, signal)
+      .then((result) => {
+        researchSpan.setAttribute("research.status", "completed");
+        researchSpan.setAttribute("research.sources_count", result.sources?.length ?? 0);
+        researchSpan.end();
+        pinoLogger.info({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "completed", sourcesCount: result.sources?.length ?? 0 }, "research completed");
+        return jobStore.setCompleted(jobId, result);
+      })
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        researchSpan.setAttribute("research.status", "failed");
+        researchSpan.setAttribute("research.error", errorMessage.slice(0, 500));
+        researchSpan.recordException(err instanceof Error ? err : new Error(errorMessage));
+        researchSpan.end();
+        pinoLogger.warn({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "failed", error: errorMessage.slice(0, 500) }, "research failed");
+        return jobStore.setFailed(jobId, errorMessage);
+      })
+  );
 
     return c.json({ jobId, status: "pending" as const }, 202);
   });
@@ -277,22 +280,41 @@ app.post("/webhooks/manus", async (c) => {
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 let server: ReturnType<typeof serve> | null = null;
 
+/** Background research work started from POST /research (fire-and-forget). */
+const pendingResearch = new Set<Promise<unknown>>();
+
+function trackResearch(p: Promise<unknown>): void {
+  pendingResearch.add(p);
+  void p.finally(() => pendingResearch.delete(p));
+}
+
 if (process.env.NODE_ENV !== "test") {
   server = serve({ fetch: app.fetch, port: config.port });
 }
 
-function shutdown(): void {
-  pinoLogger.info("Shutting down");
+async function shutdown(): Promise<void> {
+  const n = pendingResearch.size;
+  pinoLogger.info({ pendingResearch: n }, "Shutting down");
+  if (n > 0) {
+    await Promise.race([
+      Promise.all(Array.from(pendingResearch)),
+      new Promise<void>((r) => setTimeout(r, SHUTDOWN_TIMEOUT_MS)),
+    ]);
+  }
   manusStore.destroy();
   jobStore.destroy?.();
   if (server) {
     server.close?.();
   }
-  setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS).unref();
+  process.exit(0);
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", () => {
+  void shutdown();
+});
+process.on("SIGINT", () => {
+  void shutdown();
+});
 
 // ── Server ────────────────────────────────────────────────────────────────────
 

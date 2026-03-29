@@ -50,7 +50,7 @@ deep-research/
 ├── docs/
 │   └── ARCHITECTURE.md          → this file
 ├── CLAUDE.md                    → LLM quick reference
-├── AGENT.md                     → coding agent working notes
+├── AGENTS.md                    → agent memory + working notes
 └── pnpm-workspace.yaml
 ```
 

@@ -1,4 +1,5 @@
 import type { ResearchQuery, ResearchResult, ToolClient, ToolResult } from "@deep-research/types";
+import type { AgentClients } from "@deep-research/agent";
 import { FusionEngine } from "@deep-research/fusion";
 import { decompose } from "./decompose.js";
 import { decomposeWithLlm } from "./decompose-llm.js";
@@ -10,9 +11,9 @@ export interface DepthConfig {
 }
 
 const DEFAULT_DEPTH_CONFIG: DepthConfig = {
-  quick: ["perplexity", "tavily", "brave"],
-  standard: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily"] },
-  deep: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily"], slow: ["manus"] },
+  quick: ["perplexity", "tavily", "brave", "exa"],
+  standard: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily", "exa"] },
+  deep: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily", "exa"], slow: ["manus"] },
 };
 
 /** Emitted before each tool.run and after it resolves (for observability). */
@@ -61,6 +62,7 @@ export class ResearchOrchestrator {
     depthConfig?: DepthConfig,
     private readonly anthropicApiKey?: string,
     private readonly onToolEvent?: (e: ToolOrchestratorEvent) => void,
+    private readonly agentClients?: AgentClients,
   ) {
     this.depthConfig = depthConfig ?? DEFAULT_DEPTH_CONFIG;
   }
@@ -76,7 +78,6 @@ export class ResearchOrchestrator {
     const createdAt = new Date();
     try {
       if (request.depth === "agentic") {
-        const { runAgenticResearch } = await import("./agentic-strands.js");
         if (!this.anthropicApiKey) {
           return {
             query: request.query,
@@ -89,28 +90,30 @@ export class ResearchOrchestrator {
             createdAt,
           };
         }
-        return runAgenticResearch(request, {
-          anthropicApiKey: this.anthropicApiKey,
-          tools: this.tools,
-          fusion: this.fusion,
-          ...(signal !== undefined && { signal }),
-          ...(this.onToolEvent && {
-            onToolEvent: (evt: { tool: string; phase: "invoke" | "response"; queryPreview: string; success?: boolean; latencyMs?: number; citationsCount?: number }) => {
-                if (evt.phase === "invoke") {
-                  this.onToolEvent!({ phase: "invoke", tool: evt.tool, queryPreview: evt.queryPreview });
-                } else {
-                  this.onToolEvent!({
-                    phase: "response",
-                    tool: evt.tool,
-                    queryPreview: "",
-                    success: evt.success ?? false,
-                    latencyMs: evt.latencyMs ?? 0,
-                    citationsCount: evt.citationsCount ?? 0,
-                  });
-                }
-              },
-          }),
-        });
+        const { DeepResearchAgent } = await import("@deep-research/agent");
+        const agent = new DeepResearchAgent(
+          { anthropicApiKey: this.anthropicApiKey },
+          this.agentClients ?? {},
+          (evt) => {
+            if (evt.type === "researching") {
+              this.onToolEvent?.({
+                phase: "invoke",
+                tool: "agent",
+                queryPreview: evt.topic,
+              });
+            } else if (evt.type === "topic_complete") {
+              this.onToolEvent?.({
+                phase: "response",
+                tool: "agent",
+                queryPreview: evt.topic,
+                success: true,
+                latencyMs: 0,
+                citationsCount: evt.citationsFound,
+              });
+            }
+          },
+        );
+        return agent.research(request, signal);
       }
 
       const toolResults =
@@ -221,6 +224,7 @@ export class ResearchOrchestrator {
       this.runTool("perplexity", query, undefined, signal),
       this.runTool("tavily", query, { maxResults: 5 }, signal),
       this.runTool("brave", query, { count: 5, searchLang: language }, signal),
+      this.runTool("exa", query, { maxResults: 5 }, signal),
     ]);
   }
 
@@ -233,8 +237,15 @@ export class ResearchOrchestrator {
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        standard.subQueries.map((name) => this.runTool(name, q, undefined, signal))
-      )
+        standard.subQueries.map((name) =>
+          this.runTool(
+            name,
+            q,
+            name === "tavily" || name === "exa" ? { maxResults: 5 } : undefined,
+            signal,
+          ),
+        ),
+      ),
     );
     return [...mainResults, ...subResults];
   }
@@ -251,8 +262,15 @@ export class ResearchOrchestrator {
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        deep.subQueries.map((name) => this.runTool(name, q, undefined, signal))
-      )
+        deep.subQueries.map((name) =>
+          this.runTool(
+            name,
+            q,
+            name === "tavily" || name === "exa" ? { maxResults: 5 } : undefined,
+            signal,
+          ),
+        ),
+      ),
     );
     const slow = await slowPromise;
     return [...mainResults, ...subResults, ...slow];
@@ -260,5 +278,3 @@ export class ResearchOrchestrator {
 }
 
 export { decompose } from "./decompose.js";
-export { runAgenticResearch } from "./agentic-strands.js";
-export type { RunAgenticOptions } from "./agentic-strands.js";

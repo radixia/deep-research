@@ -1,5 +1,5 @@
 {
-  "name": "@deep-research/orchestrator",
+  "name": "@deep-research/agent",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -15,10 +15,15 @@
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
-    "@deep-research/agent": "workspace:*",
-    "@deep-research/fusion": "workspace:*",
-    "@deep-research/types": "workspace:*"
+    "ai": "^6",
+    "@ai-sdk/anthropic": "^3",
+    "zod": "^3.23.0",
+    "@deep-research/types": "workspace:*",
+    "@deep-research/tools-tavily": "workspace:*",
+    "@deep-research/tools-perplexity": "workspace:*",
+    "@deep-research/tools-firecrawl": "workspace:*",
+    "@deep-research/tools-brave": "workspace:*",
+    "@deep-research/tools-exa": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

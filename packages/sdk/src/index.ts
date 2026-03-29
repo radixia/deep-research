@@ -10,6 +10,8 @@ import { PerplexityClient } from "@deep-research/tools-perplexity";
 import { TavilyClient } from "@deep-research/tools-tavily";
 import { FirecrawlClient } from "@deep-research/tools-firecrawl";
 import { BraveClient } from "@deep-research/tools-brave";
+import { ExaClient } from "@deep-research/tools-exa";
+import type { AgentClients } from "@deep-research/agent";
 
 export {
   ResearchDepth,
@@ -30,10 +32,8 @@ export { FusionEngine, type FusionResult, type MergeOptions } from "@deep-resear
 
 export {
   ResearchOrchestrator,
-  runAgenticResearch,
   type DepthConfig,
   type ToolOrchestratorEvent,
-  type RunAgenticOptions,
 } from "@deep-research/orchestrator";
 
 export { ManusClient, ManusTaskStore } from "@deep-research/tools-manus";
@@ -41,6 +41,20 @@ export { PerplexityClient } from "@deep-research/tools-perplexity";
 export { TavilyClient } from "@deep-research/tools-tavily";
 export { FirecrawlClient } from "@deep-research/tools-firecrawl";
 export { BraveClient } from "@deep-research/tools-brave";
+export { ExaClient } from "@deep-research/tools-exa";
+
+export {
+  DeepResearchAgent,
+  createAgentTools,
+  planResearch,
+  synthesizeResearch,
+  type AgentConfig,
+  type AgentClients,
+  type AgentProgressEvent,
+  type ResearchPlan,
+  type SubTopicResult,
+  type SynthesisResult,
+} from "@deep-research/agent";
 
 /** API keys and options shared by the reference HTTP app and library consumers. */
 export interface DeepResearchApiKeys {
@@ -49,6 +63,7 @@ export interface DeepResearchApiKeys {
   tavilyApiKey: string;
   firecrawlApiKey: string;
   braveApiKey: string;
+  exaApiKey: string;
   anthropicApiKey?: string;
   /** Base URL where your app serves `POST /webhooks/manus` (trailing slash optional). */
   webhookBaseUrl: string;
@@ -73,6 +88,7 @@ export function createResearchTools(
     tavily: new TavilyClient(keys.tavilyApiKey),
     firecrawl: new FirecrawlClient(keys.firecrawlApiKey),
     brave: new BraveClient(keys.braveApiKey),
+    exa: new ExaClient(keys.exaApiKey),
   };
 }
 
@@ -83,11 +99,22 @@ export function createResearchOrchestrator(
   const store = options?.manusStore ?? new ManusTaskStore();
   const tools = createResearchTools(keys, store);
   const fusion = options?.fusion ?? new FusionEngine();
+
+  // Typed clients passed directly to the agent so it can call tool-specific methods
+  const agentClients: AgentClients = {
+    tavily: new TavilyClient(keys.tavilyApiKey),
+    perplexity: new PerplexityClient(keys.perplexityApiKey),
+    firecrawl: new FirecrawlClient(keys.firecrawlApiKey),
+    brave: new BraveClient(keys.braveApiKey),
+    exa: new ExaClient(keys.exaApiKey),
+  };
+
   return new ResearchOrchestrator(
     tools,
     fusion,
     options?.depthConfig,
     keys.anthropicApiKey,
     options?.onToolEvent,
+    agentClients,
   );
 }
