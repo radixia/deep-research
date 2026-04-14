@@ -39,3 +39,5 @@ Standard commands are in root `package.json` and documented in `README.md`. Quic
 5. **`.env` location**: The API dev script loads env from `../../.env` relative to `apps/api/` (i.e., the workspace root `.env`). Copy `.env.example` to `.env` and populate keys.
 
 6. **ESLint 9 flat config**: The project uses `eslint.config.js` (ESLint 9 flat config format). The `test/` directory is excluded from linting.
+
+7. **System env vars override `.env`**: `tsx --env-file` does **not** override env vars already present in the process. If `API_KEY` is injected as a system-level secret, the server picks it up even when `.env` has `API_KEY=`. Pass `x-api-key: $API_KEY` header in curl requests, or unset the variable before starting the server if you want auth disabled.
