@@ -8,91 +8,118 @@
 2. `docs/BLUEPRINT.md` — full design doc with pseudocode and rationale
 3. `packages/types/src/index.ts` — shared types/schemas (source of truth for data shapes)
 
-## Current state (as of March 2026)
+## Current state (as of April 2026)
 
-The skeleton is in place. All packages exist and compile. The API server runs.
-**But most tool clients are stubs** — they need real API integration.
+The service is fully functional as a deep research agent that can be consumed three ways:
 
-## Open tasks (in priority order)
+1. **HTTP API** — `apps/api/` Hono server (`POST /research`, `GET /research/:jobId`)
+2. **Library** — `@deep-research/sdk` package for embedding in Node.js apps
+3. **MCP tool** — `@deep-research/mcp` stdio server for Claude Desktop, Cursor, and other MCP clients
 
-### 1. Wire real API clients
+### Key features
 
-Each tool client lives in `packages/tools/<name>/src/index.ts` and must implement:
+- **5 search providers**: Manus, Perplexity, Tavily, Firecrawl, Brave
+- **Provider selection**: Caller can specify which providers to use via `providers` array, or let depth-based routing decide
+- **Domain allowlisting**: Restrict searches to specific websites via `allowedDomains`
+- **Structured response**: Executive summary with `[N]` inline references → detail sections per tool → numbered reference list
+- **Depth modes**: `quick` (~10-30s), `standard` (~1 min), `deep` (~10-15 min)
+- **47 tests** across 8 test files (unit + integration)
+
+## Request schema
 
 ```typescript
-interface ToolClient {
-  run(query: string, options?: Record<string, unknown>): Promise<ToolResult>;
+{
+  query: string;           // Required: research query
+  depth: "quick" | "standard" | "deep";  // Default: "standard"
+  outputFormat: string;    // Default: "markdown_report"
+  maxSources: number;      // Default: 50 (1–500)
+  language: string;        // Default: "en"
+  providers?: string[];    // Optional: ["tavily", "brave", "perplexity", "firecrawl", "manus"]
+  allowedDomains?: string[]; // Optional: ["arxiv.org", "github.com"]
 }
 ```
 
-Check `packages/types/src/index.ts` for the `ToolResult` shape.
+When `providers` is set, depth-based routing is bypassed — only those providers run in parallel.
+When `allowedDomains` is set, all searches are restricted to those domains (Tavily uses `include_domains`, Brave/Firecrawl prepend `site:` filters, Perplexity post-filters citations, FusionEngine filters by domain).
 
-**Manus** (`packages/tools/manus/`):
-- Uses `https://open.manus.im` REST API
-- Auth: `Authorization: Bearer $MANUS_API_KEY`
-- Flow: `POST /v1/tasks` → get `task_id` → webhook push or poll `GET /v1/tasks/{id}`
-- See BLUEPRINT.md §Manus for full example
+## Response schema
 
-**Perplexity** (`packages/tools/perplexity/`):
-- OpenAI-compatible SDK, model: `sonar-deep-research` (or `sonar-pro` for faster)
-- Returns inline citations in `response.citations[]`
-
-**Tavily** (`packages/tools/tavily/`):
-- Install `@tavily/core`
-- Method: `tavily.search({ query, searchDepth: "advanced", maxResults: 10 })`
-- Extract URLs + snippets → map to `Citation[]`
-
-**Firecrawl** (`packages/tools/firecrawl/`):
-- Install `@mendable/firecrawl-js`
-- Use `/agent` endpoint for autonomous search (no URL needed)
-- Or `scrapeUrl` + `extract` for structured output
-
-### 2. Wire Manus webhook result storage
-
-`apps/api/src/index.ts` — the `/webhooks/manus` handler receives results but throws them away.
-Add a simple in-memory store (Map) for now, keyed by `task_id`.
-The `deep` research flow should await this result via polling the store.
-
-### 3. Improve query decomposer
-
-`packages/orchestrator/src/index.ts` — the `decompose()` function is a naive string template.
-Replace with a real LLM call (Claude via Anthropic SDK recommended):
+The response includes both legacy flat fields and new structured fields:
 
 ```typescript
-async function decompose(query: string): Promise<string[]> {
-  const resp = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 512,
-    messages: [{
-      role: "user",
-      content: `Break this research query into 3-5 focused sub-queries for parallel search.
-Query: "${query}"
-Return only a JSON array of strings.`
-    }]
-  });
-  return JSON.parse(resp.content[0].text);
+{
+  // Legacy (backward compatible)
+  summary: string;
+  sources: Citation[];
+  toolResults: ToolResult[];
+  confidenceScore: number;
+
+  // Structured output
+  executiveSummary: string;     // With inline [N] reference markers
+  detailSections: [{            // Per-tool detail sections
+    tool: string;
+    content: string;
+    chunks: [{ text, sourceUrl?, sourceTitle? }];
+  }];
+  references: [{                // Numbered reference list
+    index: number;
+    url: string;
+    title: string;
+    snippet: string;
+    sourceTool: string;
+  }];
 }
 ```
 
-### 4. Semantic dedup in FusionEngine
+## MCP server
 
-Currently dedup is URL-exact only. Add embedding-based similarity:
-- Use `@xenova/transformers` for local embeddings (no API key)
-- Or OpenAI `text-embedding-3-small` for quality
-- Threshold: cosine similarity > 0.92 → treat as duplicate, keep higher-credibility
+The `@deep-research/mcp` package exposes a `deep_research` tool via Model Context Protocol.
 
-### 5. Add Langfuse tracing
+### Running
 
-Wrap all tool `run()` calls and LLM calls with Langfuse spans.
-Useful for debugging slow queries and comparing tool performance.
+```bash
+# Set env vars and run
+MANUS_API_KEY=... PERPLEXITY_API_KEY=... TAVILY_API_KEY=... \
+FIRECRAWL_API_KEY=... BRAVE_API_KEY=... \
+node packages/mcp/dist/index.js
+```
 
----
+### Cursor/Claude Desktop config
+
+```json
+{
+  "mcpServers": {
+    "deep-research": {
+      "command": "node",
+      "args": ["/path/to/deep-research/packages/mcp/dist/index.js"],
+      "env": {
+        "MANUS_API_KEY": "...",
+        "PERPLEXITY_API_KEY": "...",
+        "TAVILY_API_KEY": "...",
+        "FIRECRAWL_API_KEY": "...",
+        "BRAVE_API_KEY": "..."
+      }
+    }
+  }
+}
+```
+
+### Tool parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | Yes | Research query |
+| `depth` | enum | No | `quick`, `standard`, `deep` (default: `standard`) |
+| `providers` | string[] | No | Specific providers to use |
+| `allowedDomains` | string[] | No | Restrict to these domains |
+| `maxSources` | number | No | Max sources (default: 50) |
 
 ## Things NOT to change
 
 - `packages/types/src/index.ts` — change only additive (never remove fields without checking all consumers)
 - The `/research` API shape — breaking change, requires versioning
 - The tool weight constants in `FusionEngine` — only adjust after benchmarking
+- `ProviderName` enum values — they're used as keys throughout the system
 
 ## File-by-file quick reference
 
@@ -100,10 +127,13 @@ Useful for debugging slow queries and comparing tool performance.
 |------|---------|
 | `apps/api/src/index.ts` | HTTP routes + server bootstrap |
 | `apps/api/src/config.ts` | Env var parsing (Zod) |
-| `packages/orchestrator/src/index.ts` | Depth routing + tool dispatch |
-| `packages/fusion/src/index.ts` | Merge, dedup, rank, confidence score |
+| `packages/orchestrator/src/index.ts` | Depth routing + direct mode + tool dispatch |
+| `packages/fusion/src/index.ts` | Merge, dedup, rank, structured output, confidence |
 | `packages/types/src/index.ts` | All shared Zod schemas + TS types |
-| `packages/tools/*/src/index.ts` | Individual API clients |
+| `packages/tools/*/src/index.ts` | Individual API clients (all support allowedDomains) |
+| `packages/sdk/src/index.ts` | Library entry: factories, re-exports |
+| `packages/mcp/src/server.ts` | MCP tool definition + result formatter |
+| `packages/mcp/src/index.ts` | MCP stdio entry point |
 
 ## Local dev workflow
 
@@ -124,6 +154,17 @@ pnpm dev
 curl -X POST http://localhost:3000/research \
   -H "Content-Type: application/json" \
   -d '{"query": "agentic AI frameworks 2026", "depth": "quick"}'
+
+# 6. With provider selection and domain restriction
+curl -X POST http://localhost:3000/research \
+  -H "Content-Type: application/json" \
+  -d '{"query": "transformer architectures", "providers": ["tavily", "brave"], "allowedDomains": ["arxiv.org"]}'
+
+# 7. Run tests
+pnpm test
+
+# 8. Run tests for a specific package
+pnpm test -- packages/fusion/
 ```
 
 ## Notes on Manus
@@ -138,5 +179,5 @@ If Manus times out or fails, the research still completes with the fast tools �
 
 ## Naming conventions
 
-- Tool names in code: `"manus"`, `"perplexity"`, `"tavily"`, `"firecrawl"` (lowercase, exact)
-- These strings appear in `ToolResult.tool` and are used by FusionEngine for weighting — don't change them
+- Tool names in code: `"manus"`, `"perplexity"`, `"tavily"`, `"firecrawl"`, `"brave"` (lowercase, exact)
+- These strings appear in `ToolResult.tool`, `ProviderName` enum, and are used by FusionEngine for weighting — don't change them
