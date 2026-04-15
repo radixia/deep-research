@@ -73,17 +73,24 @@ export class ResearchOrchestrator {
   async research(request: ResearchQuery, signal?: AbortSignal): Promise<ResearchResult> {
     const createdAt = new Date();
     try {
+      // When providers are explicitly specified, run them directly (ignoring depth routing).
       const toolResults =
-        request.depth === "quick"
-          ? await this.runQuick(request, signal)
-          : request.depth === "standard"
-            ? await this.runStandard(request, signal)
-            : await this.runDeep(request, signal);
+        request.providers && request.providers.length > 0
+          ? await this.runDirect(request, signal)
+          : request.depth === "quick"
+            ? await this.runQuick(request, signal)
+            : request.depth === "standard"
+              ? await this.runStandard(request, signal)
+              : await this.runDeep(request, signal);
 
-      const merged = this.fusion.merge(request.query, toolResults, {
+      const mergeOpts: Parameters<FusionEngine["merge"]>[2] = {
         outputFormat: request.outputFormat,
         maxSources: request.maxSources,
-      });
+      };
+      if (request.allowedDomains) {
+        mergeOpts.allowedDomains = request.allowedDomains;
+      }
+      const merged = this.fusion.merge(request.query, toolResults, mergeOpts);
 
       return {
         query: request.query,
@@ -93,6 +100,9 @@ export class ResearchOrchestrator {
         sources: merged.sources,
         toolResults,
         confidenceScore: merged.confidenceScore,
+        executiveSummary: merged.executiveSummary,
+        detailSections: merged.detailSections,
+        references: merged.references,
         createdAt,
         completedAt: new Date(),
       };
@@ -105,15 +115,25 @@ export class ResearchOrchestrator {
         sources: [],
         toolResults: [],
         confidenceScore: 0,
+        executiveSummary: "",
+        detailSections: [],
+        references: [],
         createdAt,
       };
     }
   }
 
+  // ── Tool execution helpers ──────────────────────────────────────────────
+
   private runTool(
     name: string,
     query: string,
-    opts?: { maxResults?: number; count?: number; searchLang?: string },
+    opts?: {
+      maxResults?: number;
+      count?: number;
+      searchLang?: string;
+      allowedDomains?: string[];
+    },
     signal?: AbortSignal,
   ): Promise<ToolResult> {
     const queryPreview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
@@ -171,27 +191,67 @@ export class ResearchOrchestrator {
     });
   }
 
+  // ── Execution strategies ────────────────────────────────────────────────
+
+  /**
+   * Direct provider mode: run only the caller-specified providers in parallel.
+   * Ignores depth routing entirely.
+   */
+  private async runDirect(request: ResearchQuery, signal?: AbortSignal): Promise<ToolResult[]> {
+    const providers = request.providers!;
+    const { query, language } = request;
+    const allowedDomains = request.allowedDomains;
+    const domainOpts: { allowedDomains?: string[] } =
+      allowedDomains && allowedDomains.length > 0 ? { allowedDomains } : {};
+    return Promise.all(
+      providers.map((name: string) =>
+        this.runTool(
+          name,
+          query,
+          {
+            ...(name === "brave" ? { count: 10, searchLang: language } : {}),
+            ...(name === "tavily" ? { maxResults: 10 } : {}),
+            ...domainOpts,
+          },
+          signal,
+        ),
+      ),
+    );
+  }
+
+  private getDomainOpts(request: ResearchQuery): { allowedDomains?: string[] } {
+    const ad = request.allowedDomains;
+    return ad && ad.length > 0 ? { allowedDomains: ad } : {};
+  }
+
   private async runQuick(request: ResearchQuery, signal?: AbortSignal): Promise<ToolResult[]> {
     const { query, language } = request;
+    const domainOpts = this.getDomainOpts(request);
     return Promise.all([
-      this.runTool("perplexity", query, undefined, signal),
-      this.runTool("tavily", query, { maxResults: 5 }, signal),
-      this.runTool("brave", query, { count: 5, searchLang: language }, signal),
+      this.runTool("perplexity", query, { ...domainOpts }, signal),
+      this.runTool("tavily", query, { maxResults: 5, ...domainOpts }, signal),
+      this.runTool("brave", query, { count: 5, searchLang: language, ...domainOpts }, signal),
     ]);
   }
 
   private async runStandard(request: ResearchQuery, signal?: AbortSignal): Promise<ToolResult[]> {
     const { standard } = this.depthConfig;
     const { query, language } = request;
+    const domainOpts = this.getDomainOpts(request);
     const subQueries = await this.getSubQueries(query, signal);
     const mainResults = await Promise.all(
       standard.main.map((name) =>
-        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+        this.runTool(
+          name,
+          query,
+          { ...(name === "brave" ? { searchLang: language } : {}), ...domainOpts },
+          signal,
+        ),
       ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        standard.subQueries.map((name) => this.runTool(name, q, undefined, signal)),
+        standard.subQueries.map((name) => this.runTool(name, q, { ...domainOpts }, signal)),
       ),
     );
     return [...mainResults, ...subResults];
@@ -200,18 +260,24 @@ export class ResearchOrchestrator {
   private async runDeep(request: ResearchQuery, signal?: AbortSignal): Promise<ToolResult[]> {
     const { deep } = this.depthConfig;
     const { query, language } = request;
+    const domainOpts = this.getDomainOpts(request);
     const subQueries = await this.getSubQueries(query, signal);
     const slowPromise = Promise.all(
-      deep.slow.map((name) => this.runTool(name, query, undefined, signal)),
+      deep.slow.map((name) => this.runTool(name, query, { ...domainOpts }, signal)),
     );
     const mainResults = await Promise.all(
       deep.main.map((name) =>
-        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+        this.runTool(
+          name,
+          query,
+          { ...(name === "brave" ? { searchLang: language } : {}), ...domainOpts },
+          signal,
+        ),
       ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        deep.subQueries.map((name) => this.runTool(name, q, undefined, signal)),
+        deep.subQueries.map((name) => this.runTool(name, q, { ...domainOpts }, signal)),
       ),
     );
     const slow = await slowPromise;

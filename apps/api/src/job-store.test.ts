@@ -30,6 +30,9 @@ describe("job-store", () => {
       sources: [],
       toolResults: [],
       confidenceScore: 0.8,
+      executiveSummary: "",
+      detailSections: [],
+      references: [],
       createdAt: new Date(),
       completedAt: new Date(),
     });
