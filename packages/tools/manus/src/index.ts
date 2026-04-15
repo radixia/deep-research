@@ -72,24 +72,29 @@ export class ManusClient {
   /** Fetch final assistant messages from a completed task. */
   async getTaskResult(taskId: string, signal?: AbortSignal): Promise<string | null> {
     const res = await fetch(
-      `${MANUS_BASE_URL}/v2/task.listMessages?task_id=${encodeURIComponent(taskId)}&order=desc&limit=50`,
+      `${MANUS_BASE_URL}/v2/task.listMessages?task_id=${encodeURIComponent(taskId)}&order=asc&limit=100`,
       {
         headers: this.headers,
         ...(signal !== undefined && { signal }),
       },
     );
     if (!res.ok) return null;
+
+    // v2 message format: each message has a `type` field.
+    // assistant_message → { type: "assistant_message", assistant_message: { content: "..." } }
+    interface V2Message {
+      type: string;
+      assistant_message?: { content?: string };
+    }
     const data = (await res.json()) as {
       ok: boolean;
-      messages?: Array<{ role: string; content?: string; event_type?: string }>;
+      messages?: V2Message[];
     };
     if (!data.ok || !data.messages) return null;
 
-    // Collect assistant message content from the response
     const assistantMessages = data.messages
-      .filter((m) => m.role === "assistant" && m.content)
-      .map((m) => m.content!)
-      .reverse(); // oldest first
+      .filter((m) => m.type === "assistant_message" && m.assistant_message?.content)
+      .map((m) => m.assistant_message!.content!);
 
     return assistantMessages.length > 0 ? assistantMessages.join("\n\n") : null;
   }
