@@ -18,6 +18,7 @@ import {
   setJobCompleted,
   setJobFailed,
 } from "./job-store.js";
+import { FRONTEND_HTML } from "./frontend.js";
 
 // ── Shared in-process store ───────────────────────────────────────────────────
 // Single source of truth for Manus task results.
@@ -85,12 +86,15 @@ app.use("*", cors());
 
 // ── Protected routes (auth when API_KEY is set) ───────────────────────────────
 app.use("/research", requireApiKey);
+app.use("/research/*", requireApiKey);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 app.get("/", (c) =>
   c.json({ status: "ok", service: "deep-research-agent", version: "0.1.0" }),
 );
+
+app.get("/app", (c) => c.html(FRONTEND_HTML));
 
 app.get("/health", (c) =>
   c.json({ status: "healthy", manusStoreTasks: manusStore.size }),
