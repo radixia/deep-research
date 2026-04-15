@@ -14,6 +14,7 @@ export { ManusTaskStore } from "./store.js";
 
 const MANUS_BASE_URL = "https://api.manus.ai";
 const API_POLL_INTERVAL_MS = 5_000;
+const INITIAL_POLL_DELAY_MS = 3_000;
 
 export class ManusClient {
   private readonly headers: Record<string, string>;
@@ -140,15 +141,23 @@ export class ManusClient {
     start: number,
     signal?: AbortSignal,
   ): Promise<string | null> {
+    // Manus v2 has eventual consistency — task.detail returns 404 immediately
+    // after creation. Wait a few seconds before first poll.
+    await sleep(INITIAL_POLL_DELAY_MS);
+
     while (true) {
       if (signal?.aborted) return null;
       if (Date.now() - start > maxWaitMs) return null;
-      const task = await this.getTask(taskId, signal);
-      if (task.status === "completed") {
-        // Fetch the actual result content via listMessages
-        return this.getTaskResult(taskId, signal);
+      try {
+        const task = await this.getTask(taskId, signal);
+        if (task.status === "completed") {
+          // Fetch the actual result content via listMessages
+          return this.getTaskResult(taskId, signal);
+        }
+        if (task.status === "failed" || task.status === "error") return null;
+      } catch {
+        // task.detail may 404 during initial consistency window — keep polling
       }
-      if (task.status === "failed" || task.status === "error") return null;
       await sleep(API_POLL_INTERVAL_MS);
     }
   }
