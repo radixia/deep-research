@@ -163,10 +163,11 @@ flowchart LR
 |------|------|
 | `apps/api/` | Hono HTTP server (entrypoint) |
 | `packages/sdk/` | Library: `createResearchOrchestrator`, tool clients, types |
+| `packages/agent/` | Agentic deep research (Claude + tools) |
 | `packages/types/` | Zod schemas + shared TypeScript types |
 | `packages/orchestrator/` | Depth routing, query decomposition, tool dispatch |
 | `packages/fusion/` | Dedup, credibility ranking, confidence scoring |
-| `packages/tools/*` | manus, perplexity, tavily, firecrawl, brave |
+| `packages/tools/*` | manus, perplexity, tavily, firecrawl, brave, exa |
 | `test/e2e/` | E2E tests (API must be running; API_KEY if required) |
 | `docs/` | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [BLUEPRINT.md](docs/BLUEPRINT.md), [diagrams/](docs/diagrams/) |
 

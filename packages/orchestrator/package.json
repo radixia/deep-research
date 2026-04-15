@@ -15,7 +15,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "@deep-research/agent": "workspace:*",
     "@deep-research/fusion": "workspace:*",
     "@deep-research/types": "workspace:*"

@@ -35,6 +35,7 @@ const orchestrator = createResearchOrchestrator(
     exaApiKey: config.exaApiKey,
     anthropicApiKey: config.anthropicApiKey,
     webhookBaseUrl: config.webhookBaseUrl,
+    ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
   },
   {
     manusStore,
@@ -259,10 +260,15 @@ app.post("/webhooks/manus", async (c) => {
 
   if (event_type === "task_stopped" && task_detail) {
     const status = task_detail.stop_reason === "finish" ? "completed" : "failed";
+    const taskData: { status: "completed" | "failed"; result?: string; error?: string } = { status };
+    if (task_detail.message !== undefined) {
+      taskData.result = task_detail.message;
+    }
+    if (status === "failed" && task_detail.message !== undefined) {
+      taskData.error = task_detail.message;
+    }
     manusStore.set(task_detail.task_id, {
-      status,
-      result: task_detail.message,
-      error: status === "failed" ? task_detail.message : undefined,
+      ...taskData,
     });
   }
   // task_created and task_progress: acknowledge only, no store update

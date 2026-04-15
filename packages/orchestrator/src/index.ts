@@ -139,7 +139,7 @@ export class ResearchOrchestrator {
         createdAt,
         completedAt: new Date(),
       };
-    } catch (err) {
+    } catch {
       return {
         query: request.query,
         depth: request.depth,
@@ -157,7 +157,7 @@ export class ResearchOrchestrator {
     name: string,
     query: string,
     opts?: { maxResults?: number; count?: number; searchLang?: string },
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<ToolResult> {
     const invocationId = crypto.randomUUID().slice(0, 8);
     const queryPreview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
@@ -233,7 +233,9 @@ export class ResearchOrchestrator {
     const { query, language } = request;
     const subQueries = await this.getSubQueries(query, signal);
     const mainResults = await Promise.all(
-      standard.main.map((name) => this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal))
+      standard.main.map((name) =>
+        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+      ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
@@ -255,10 +257,12 @@ export class ResearchOrchestrator {
     const { query, language } = request;
     const subQueries = await this.getSubQueries(query, signal);
     const slowPromise = Promise.all(
-      deep.slow.map((name) => this.runTool(name, query, undefined, signal))
+      deep.slow.map((name) => this.runTool(name, query, undefined, signal)),
     );
     const mainResults = await Promise.all(
-      deep.main.map((name) => this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal))
+      deep.main.map((name) =>
+        this.runTool(name, query, name === "brave" ? { searchLang: language } : undefined, signal),
+      ),
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
