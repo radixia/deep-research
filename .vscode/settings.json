@@ -1,0 +1,17 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+  "prettier.requireConfig": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.pnpm-store": true,
+    "**/pnpm-lock.yaml": false
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.pnpm-store/**": true
+  }
+}
