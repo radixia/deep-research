@@ -1,5 +1,5 @@
 /**
- * Manus API client.
+ * Manus API v2 client.
  * The "deep executor" — autonomously plans and runs multi-step research tasks.
  *
  * Result delivery strategy (in order of preference):
@@ -12,7 +12,7 @@ import { ManusTaskStore } from "./store.js";
 
 export { ManusTaskStore } from "./store.js";
 
-const MANUS_BASE_URL = "https://open.manus.im";
+const MANUS_BASE_URL = "https://api.manus.ai";
 const API_POLL_INTERVAL_MS = 5_000;
 
 export class ManusClient {
@@ -25,34 +25,72 @@ export class ManusClient {
     private readonly store?: ManusTaskStore,
   ) {
     this.headers = {
-      Authorization: `Bearer ${apiKey}`,
+      "x-manus-api-key": apiKey,
       "Content-Type": "application/json",
     };
   }
 
   async createTask(query: string, signal?: AbortSignal): Promise<string> {
-    const res = await fetch(`${MANUS_BASE_URL}/v1/tasks`, {
+    const res = await fetch(`${MANUS_BASE_URL}/v2/task.create`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({
-        task: query,
-        webhook_url: this.webhookUrl,
-        return_format: "markdown",
+        message: {
+          content: query,
+        },
       }),
       ...(signal !== undefined && { signal }),
     });
-    if (!res.ok) throw new Error(`Manus createTask failed: ${res.status}`);
-    const data = (await res.json()) as { task_id: string };
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Manus createTask failed: ${res.status} ${body}`);
+    }
+    const data = (await res.json()) as { ok: boolean; task_id: string; error?: { code: string; message: string } };
+    if (!data.ok) {
+      throw new Error(`Manus createTask error: ${data.error?.code ?? "unknown"} — ${data.error?.message ?? ""}`);
+    }
     return data.task_id;
   }
 
   async getTask(taskId: string, signal?: AbortSignal): Promise<{ status: string; result?: string }> {
-    const res = await fetch(`${MANUS_BASE_URL}/v1/tasks/${taskId}`, {
+    const res = await fetch(`${MANUS_BASE_URL}/v2/task.detail?task_id=${encodeURIComponent(taskId)}`, {
       headers: this.headers,
       ...(signal !== undefined && { signal }),
     });
     if (!res.ok) throw new Error(`Manus getTask failed: ${res.status}`);
-    return res.json() as Promise<{ status: string; result?: string }>;
+    const data = (await res.json()) as {
+      ok: boolean;
+      task?: { status: string };
+    };
+    // Map v2 statuses to our internal ones
+    const rawStatus = data.task?.status ?? "unknown";
+    const status = rawStatus === "stopped" ? "completed" : rawStatus;
+    return { status };
+  }
+
+  /** Fetch final assistant messages from a completed task. */
+  async getTaskResult(taskId: string, signal?: AbortSignal): Promise<string | null> {
+    const res = await fetch(
+      `${MANUS_BASE_URL}/v2/task.listMessages?task_id=${encodeURIComponent(taskId)}&order=desc&limit=50`,
+      {
+        headers: this.headers,
+        ...(signal !== undefined && { signal }),
+      },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      ok: boolean;
+      messages?: Array<{ role: string; content?: string; event_type?: string }>;
+    };
+    if (!data.ok || !data.messages) return null;
+
+    // Collect assistant message content from the response
+    const assistantMessages = data.messages
+      .filter((m) => m.role === "assistant" && m.content)
+      .map((m) => m.content!)
+      .reverse(); // oldest first
+
+    return assistantMessages.length > 0 ? assistantMessages.join("\n\n") : null;
   }
 
   async run(query: string, options?: { signal?: AbortSignal; maxWaitMs?: number }): Promise<ToolResult> {
@@ -100,14 +138,17 @@ export class ManusClient {
     taskId: string,
     maxWaitMs: number,
     start: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<string | null> {
     while (true) {
       if (signal?.aborted) return null;
       if (Date.now() - start > maxWaitMs) return null;
       const task = await this.getTask(taskId, signal);
-      if (task.status === "completed") return task.result ?? null;
-      if (task.status === "failed") return null;
+      if (task.status === "completed") {
+        // Fetch the actual result content via listMessages
+        return this.getTaskResult(taskId, signal);
+      }
+      if (task.status === "failed" || task.status === "error") return null;
       await sleep(API_POLL_INTERVAL_MS);
     }
   }
