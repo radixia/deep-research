@@ -102,9 +102,9 @@ export class ManusClient {
 
       this.store?.init(taskId);
 
-      const result = this.store
-        ? await this.waitViaStore(taskId, maxWaitMs, signal)
-        : await this.waitViaPolling(taskId, maxWaitMs, start, signal);
+      // Always poll: webhook store is a bonus (resolves faster if webhook fires),
+      // but we can't rely on it since webhooks may not reach localhost.
+      const result = await this.waitViaPolling(taskId, maxWaitMs, start, signal);
 
       return {
         tool: "manus",
