@@ -27,6 +27,8 @@ export interface FusionResult {
 export interface MergeOptions {
   outputFormat?: OutputFormat;
   maxSources?: number;
+  /** When provided, only keep citations from these domains. */
+  allowedDomains?: string[];
 }
 
 export class FusionEngine {
@@ -35,12 +37,15 @@ export class FusionEngine {
     toolResults: ToolResult[],
     options: MergeOptions = {}
   ): FusionResult {
-    const { outputFormat = "markdown_report", maxSources = 50 } = options;
+    const { outputFormat = "markdown_report", maxSources = 50, allowedDomains } = options;
     const allCitations = toolResults.flatMap((tr) => (tr.success ? tr.citations : []));
     const totalBefore = allCitations.length;
 
     const unique = this.dedupByUrl(allCitations);
-    const scored = this.applyCredibility(unique);
+    const domainFiltered = allowedDomains?.length
+      ? this.filterByDomain(unique, allowedDomains)
+      : unique;
+    const scored = this.applyCredibility(domainFiltered);
     const ranked = scored.slice().sort((a: Citation, b: Citation) => b.credibilityScore - a.credibilityScore);
     const sources = ranked.slice(0, maxSources);
 
@@ -49,6 +54,17 @@ export class FusionEngine {
     const dedupRatio = totalBefore > 0 ? 1 - sources.length / totalBefore : 0;
 
     return { summary, sources, confidenceScore, dedupRatio };
+  }
+
+  private filterByDomain(citations: Citation[], allowedDomains: string[]): Citation[] {
+    return citations.filter((c) => {
+      try {
+        const host = new URL(c.url).hostname.replace(/^www\./, "");
+        return allowedDomains.some((d) => host === d || host.endsWith(`.${d}`));
+      } catch {
+        return false;
+      }
+    });
   }
 
   private dedupByUrl(citations: Citation[]): Citation[] {

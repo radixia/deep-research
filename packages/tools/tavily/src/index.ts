@@ -20,23 +20,34 @@ export class TavilyClient {
 
   async run(
     query: string,
-    options: { maxResults?: number; searchDepth?: "basic" | "advanced"; includeRawContent?: boolean; signal?: AbortSignal } = {},
+    options: {
+      maxResults?: number;
+      searchDepth?: "basic" | "advanced";
+      includeRawContent?: boolean;
+      signal?: AbortSignal;
+      allowedDomains?: string[];
+    } = {},
   ): Promise<ToolResult> {
-    const { maxResults = 10, searchDepth = "advanced", includeRawContent = true, signal } = options;
+    const { maxResults = 10, searchDepth = "advanced", includeRawContent = true, signal, allowedDomains } = options;
     const start = Date.now();
     try {
+      const body: Record<string, unknown> = {
+        query,
+        search_depth: searchDepth,
+        max_results: maxResults,
+        include_raw_content: includeRawContent,
+      };
+      if (allowedDomains && allowedDomains.length > 0) {
+        body.include_domains = allowedDomains;
+      }
+
       const res = await fetch(`${TAVILY_BASE_URL}/search`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          query,
-          search_depth: searchDepth,
-          max_results: maxResults,
-          include_raw_content: includeRawContent,
-        }),
+        body: JSON.stringify(body),
         signal: signal ?? AbortSignal.timeout(30_000),
       });
 

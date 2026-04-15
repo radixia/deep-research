@@ -18,17 +18,26 @@ export class FirecrawlClient {
     };
   }
 
-  async run(query: string, options?: { schema?: Record<string, unknown>; signal?: AbortSignal }): Promise<ToolResult> {
-    const { schema, signal } = options ?? {};
+  async run(
+    query: string,
+    options?: { schema?: Record<string, unknown>; signal?: AbortSignal; allowedDomains?: string[] },
+  ): Promise<ToolResult> {
+    const { schema, signal, allowedDomains } = options ?? {};
     const start = Date.now();
     try {
       const endpoint = schema
         ? `${FIRECRAWL_BASE_URL}/v1/extract`
         : `${FIRECRAWL_BASE_URL}/v1/search`;
 
+      let searchQuery = query;
+      if (!schema && allowedDomains && allowedDomains.length > 0) {
+        const siteFilter = allowedDomains.map((d) => `site:${d}`).join(" OR ");
+        searchQuery = `(${siteFilter}) ${query}`;
+      }
+
       const body = schema
         ? { prompt: query, schema }
-        : { query, scrapeOptions: { formats: ["markdown"] } };
+        : { query: searchQuery, scrapeOptions: { formats: ["markdown"] } };
 
       const res = await fetch(endpoint, {
         method: "POST",

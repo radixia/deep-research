@@ -13,9 +13,10 @@ export class PerplexityClient {
     private readonly model = "sonar-deep-research",
   ) {}
 
-  async run(query: string, options?: { signal?: AbortSignal }): Promise<ToolResult> {
+  async run(query: string, options?: { signal?: AbortSignal; allowedDomains?: string[] }): Promise<ToolResult> {
     const start = Date.now();
     const signal = options?.signal;
+    const allowedDomains = options?.allowedDomains;
     try {
       const res = await fetch(`${PERPLEXITY_BASE_URL}/chat/completions`, {
         method: "POST",
@@ -50,7 +51,7 @@ export class PerplexityClient {
         title: typeof c === "string" ? "" : (c.title ?? ""),
         snippet: typeof c === "string" ? "" : (c.snippet ?? ""),
       }));
-      const citations: Citation[] = rawCitations
+      let citations: Citation[] = rawCitations
         .filter((c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url))
         .map((c) => ({
           url: c.url,
@@ -60,6 +61,17 @@ export class PerplexityClient {
           fetchedAt: new Date(),
           credibilityScore: 0.5,
         }));
+
+      if (allowedDomains && allowedDomains.length > 0) {
+        citations = citations.filter((c) => {
+          try {
+            const host = new URL(c.url).hostname.replace(/^www\./, "");
+            return allowedDomains.some((d) => host === d || host.endsWith(`.${d}`));
+          } catch {
+            return false;
+          }
+        });
+      }
 
       return { tool: "perplexity", rawOutput: content, citations, latencyMs: Date.now() - start, success: true };
     } catch (err) {

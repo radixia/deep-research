@@ -23,13 +23,19 @@ export class BraveClient {
 
   async run(
     query: string,
-    options: { count?: number; signal?: AbortSignal; searchLang?: string } = {},
+    options: { count?: number; signal?: AbortSignal; searchLang?: string; allowedDomains?: string[] } = {},
   ): Promise<ToolResult> {
-    const { count = 10, signal, searchLang } = options;
+    const { count = 10, signal, searchLang, allowedDomains } = options;
     const start = Date.now();
     try {
+      let q = query;
+      if (allowedDomains && allowedDomains.length > 0) {
+        const siteFilter = allowedDomains.map((d) => `site:${d}`).join(" OR ");
+        q = `(${siteFilter}) ${query}`;
+      }
+
       const url = new URL(BRAVE_WEB_SEARCH_URL);
-      url.searchParams.set("q", query);
+      url.searchParams.set("q", q);
       url.searchParams.set("count", String(Math.min(20, Math.max(1, count))));
       if (searchLang) url.searchParams.set("search_lang", searchLang);
 
