@@ -34,6 +34,12 @@ export class MemoryJobSessionStore implements JobSessionStore {
     return this.jobs.get(jobId);
   }
 
+  async list(): Promise<ResearchJob[]> {
+    return Array.from(this.jobs.values()).sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+  }
+
   async setRunning(jobId: string): Promise<void> {
     const job = this.jobs.get(jobId);
     if (job) job.status = "running";

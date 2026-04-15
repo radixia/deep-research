@@ -11,6 +11,7 @@ export interface JobStoreLogger {
 export interface JobSessionStore {
   create(): Promise<string>;
   get(jobId: string): Promise<ResearchJob | undefined>;
+  list(): Promise<ResearchJob[]>;
   setRunning(jobId: string): Promise<void>;
   setCompleted(jobId: string, result: ResearchResult): Promise<void>;
   setFailed(jobId: string, error: string): Promise<void>;

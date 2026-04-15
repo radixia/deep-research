@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
@@ -14,6 +15,12 @@ import { getManusPublicKey, verifyManusWebhook } from "./manus-webhook-verify.js
 import { FileJobSessionStore } from "./job-session-store/index.js";
 import { tracer, withSpan, toolSpanStorage } from "./trace.js";
 import { SpanStatusCode } from "@opentelemetry/api";
+
+// ── Dashboard HTML (loaded once at startup) ──────────────────────────────────
+const dashboardHtml = readFileSync(
+  new URL("./dashboard/index.html", import.meta.url),
+  "utf-8"
+);
 
 // ── Job session store (persisted to file; swappable for DB later) ───────────────
 const jobStore = new FileJobSessionStore({ filePath: config.jobStorePath, logger: pinoLogger });
@@ -93,16 +100,32 @@ const orchestrator = createResearchOrchestrator(
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-export const app = new Hono();
+export const app = new Hono<{ Variables: { requestId: string } }>();
+
+app.use("*", async (c, next) => {
+  const requestId = c.req.header("x-request-id") ?? crypto.randomUUID().slice(0, 8);
+  c.set("requestId", requestId);
+  c.header("x-request-id", requestId);
+  await next();
+});
 
 app.use("*", async (c, next) => {
   const start = Date.now();
   await next();
+  const requestId = c.get("requestId");
+  const durationMs = Date.now() - start;
   pinoLogger.info(
-    { method: c.req.method, path: c.req.path, status: c.res.status, durationMs: Date.now() - start },
-    "request"
+    {
+      requestId,
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      durationMs,
+    },
+    `${c.req.method} ${c.req.path} ${c.res.status} ${durationMs}ms`
   );
 });
+
 app.use("*", cors());
 
 // ── Protected routes (auth when API_KEY is set) ───────────────────────────────
@@ -117,6 +140,13 @@ app.get("/", (c) =>
 app.get("/health", (c) =>
   c.json({ status: "healthy", manusStoreTasks: manusStore.size }),
 );
+
+app.get("/dashboard", (c) => c.html(dashboardHtml));
+
+app.get("/jobs", async (c) => {
+  const jobs = await jobStore.list();
+  return c.json({ jobs });
+});
 
 app.post("/research", async (c) => {
   return toolSpanStorage.run(new Map(), async () => {

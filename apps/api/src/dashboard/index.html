@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deep Research Agent</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-secondary: #161b22;
+      --bg-tertiary: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --blue: #58a6ff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 { font-size: 20px; font-weight: 600; }
+    .health { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-muted); }
+    .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .health-dot.error { background: var(--red); }
+
+    .card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .card-body { padding: 16px; }
+
+    form { display: flex; flex-direction: column; gap: 12px; }
+    .form-row { display: flex; gap: 12px; }
+    .form-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+    input, select, textarea {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 8px 12px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    textarea { resize: vertical; min-height: 80px; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.9; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .jobs-table { width: 100%; border-collapse: collapse; }
+    .jobs-table th, .jobs-table td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .jobs-table th { color: var(--text-muted); font-weight: 500; }
+    .jobs-table tr:last-child td { border-bottom: none; }
+    .jobs-table tr { cursor: pointer; transition: background 0.1s; }
+    .jobs-table tbody tr:hover { background: var(--bg-tertiary); }
+    .jobs-table tr.selected { background: var(--bg-tertiary); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .badge-pending { background: rgba(210, 153, 34, 0.2); color: var(--yellow); }
+    .badge-running { background: rgba(88, 166, 255, 0.2); color: var(--blue); }
+    .badge-completed { background: rgba(63, 185, 80, 0.2); color: var(--green); }
+    .badge-failed { background: rgba(248, 81, 73, 0.2); color: var(--red); }
+
+    .query-preview {
+      max-width: 400px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .detail-panel { display: none; }
+    .detail-panel.visible { display: block; }
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .detail-meta { font-size: 13px; color: var(--text-muted); }
+    .detail-close {
+      background: transparent;
+      color: var(--text-muted);
+      padding: 4px 8px;
+      font-size: 18px;
+    }
+    .detail-close:hover { color: var(--text); }
+
+    .summary-box {
+      background: var(--bg-tertiary);
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 16px;
+      white-space: pre-wrap;
+      font-size: 14px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .sources-list { list-style: none; }
+    .sources-list li {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .sources-list li:last-child { border-bottom: none; }
+    .source-title { font-weight: 500; margin-bottom: 4px; }
+    .source-title a { color: var(--accent); text-decoration: none; }
+    .source-title a:hover { text-decoration: underline; }
+    .source-snippet { font-size: 13px; color: var(--text-muted); }
+    .source-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    .confidence-bar {
+      height: 6px;
+      background: var(--bg-tertiary);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .confidence-fill {
+      height: 100%;
+      background: var(--green);
+      transition: width 0.3s;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-muted);
+    }
+    .error-msg { color: var(--red); margin-top: 8px; font-size: 14px; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab {
+      background: transparent;
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 6px;
+    }
+    .tab.active { background: var(--bg-tertiary); color: var(--text); }
+
+    @media (max-width: 768px) {
+      .form-row { flex-direction: column; }
+      .query-preview { max-width: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Deep Research Agent</h1>
+      <div class="health">
+        <span class="health-dot" id="healthDot"></span>
+        <span id="healthText">Checking...</span>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="card-header">New Research</div>
+      <div class="card-body">
+        <form id="researchForm">
+          <div class="form-group">
+            <label for="query">Query</label>
+            <textarea id="query" name="query" placeholder="What would you like to research?" required></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="depth">Depth</label>
+              <select id="depth" name="depth">
+                <option value="quick">Quick (~30s)</option>
+                <option value="standard" selected>Standard (~1min)</option>
+                <option value="deep">Deep (~10min)</option>
+                <option value="agentic">Agentic (~15min)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="apiKey">API Key</label>
+              <input type="password" id="apiKey" name="apiKey" placeholder="Leave empty if auth disabled">
+            </div>
+          </div>
+          <button type="submit" id="submitBtn">Start Research</button>
+          <div id="formError" class="error-msg" style="display: none;"></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Jobs</div>
+      <div class="card-body" style="padding: 0;">
+        <table class="jobs-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Depth</th>
+              <th>Query</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="jobsBody">
+            <tr><td colspan="4" class="empty-state">No jobs yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card detail-panel" id="detailPanel">
+      <div class="card-header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span>Job Details</span>
+          <button class="detail-close" id="closeDetail">&times;</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="detail-header">
+          <div>
+            <span class="badge" id="detailStatus"></span>
+            <span class="detail-meta" id="detailMeta"></span>
+          </div>
+        </div>
+        <div id="detailQuery" style="margin-bottom: 16px; font-style: italic;"></div>
+        
+        <div id="detailContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';
+    let jobs = [];
+    let selectedJobId = null;
+    let pollInterval = null;
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/health`);
+        const data = await res.json();
+        document.getElementById('healthDot').classList.toggle('error', data.status !== 'healthy');
+        document.getElementById('healthText').textContent = data.status === 'healthy' ? 'Healthy' : 'Error';
+      } catch {
+        document.getElementById('healthDot').classList.add('error');
+        document.getElementById('healthText').textContent = 'Disconnected';
+      }
+    }
+
+    async function fetchJobs() {
+      try {
+        const res = await fetch(`${API_BASE}/jobs`);
+        const data = await res.json();
+        jobs = data.jobs || [];
+        renderJobs();
+        
+        const hasPending = jobs.some(j => j.status === 'pending' || j.status === 'running');
+        if (hasPending && !pollInterval) {
+          pollInterval = setInterval(fetchJobs, 3000);
+        } else if (!hasPending && pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        
+        if (selectedJobId) {
+          const job = jobs.find(j => j.jobId === selectedJobId);
+          if (job) showDetail(job);
+        }
+      } catch (err) {
+        console.error('Failed to fetch jobs:', err);
+      }
+    }
+
+    function renderJobs() {
+      const tbody = document.getElementById('jobsBody');
+      if (jobs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No jobs yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = jobs.map(job => `
+        <tr data-id="${job.jobId}" class="${job.jobId === selectedJobId ? 'selected' : ''}">
+          <td><span class="badge badge-${job.status}">${job.status}</span></td>
+          <td>${job.result?.depth || '-'}</td>
+          <td class="query-preview">${escapeHtml(job.result?.query || '-')}</td>
+          <td>${formatDate(job.createdAt)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function showDetail(job) {
+      selectedJobId = job.jobId;
+      const panel = document.getElementById('detailPanel');
+      panel.classList.add('visible');
+      
+      document.getElementById('detailStatus').className = `badge badge-${job.status}`;
+      document.getElementById('detailStatus').textContent = job.status;
+      document.getElementById('detailMeta').textContent = ` • ${job.jobId.slice(0, 8)}... • ${formatDate(job.createdAt)}`;
+      document.getElementById('detailQuery').textContent = job.result?.query || '';
+
+      const content = document.getElementById('detailContent');
+      
+      if (job.status === 'pending' || job.status === 'running') {
+        content.innerHTML = '<div class="empty-state">Research in progress...</div>';
+      } else if (job.status === 'failed') {
+        content.innerHTML = `<div class="error-msg">${escapeHtml(job.error || 'Unknown error')}</div>`;
+      } else if (job.status === 'completed' && job.result) {
+        const r = job.result;
+        content.innerHTML = `
+          <div style="margin-bottom: 12px;">
+            <strong>Confidence:</strong> ${(r.confidenceScore * 100).toFixed(0)}%
+            <div class="confidence-bar"><div class="confidence-fill" style="width: ${r.confidenceScore * 100}%"></div></div>
+          </div>
+          <div class="tabs">
+            <button class="tab active" data-tab="summary">Summary</button>
+            <button class="tab" data-tab="sources">Sources (${r.sources?.length || 0})</button>
+            <button class="tab" data-tab="tools">Tools (${r.toolResults?.length || 0})</button>
+          </div>
+          <div id="tabSummary" class="tab-content">
+            <div class="summary-box">${escapeHtml(r.summary || 'No summary available')}</div>
+          </div>
+          <div id="tabSources" class="tab-content" style="display: none;">
+            ${renderSources(r.sources || [])}
+          </div>
+          <div id="tabTools" class="tab-content" style="display: none;">
+            ${renderToolResults(r.toolResults || [])}
+          </div>
+        `;
+        
+        content.querySelectorAll('.tab').forEach(tab => {
+          tab.addEventListener('click', () => {
+            content.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            content.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            tab.classList.add('active');
+            document.getElementById('tab' + capitalize(tab.dataset.tab)).style.display = 'block';
+          });
+        });
+      }
+      
+      renderJobs();
+    }
+
+    function renderSources(sources) {
+      if (sources.length === 0) return '<div class="empty-state">No sources</div>';
+      return `<ul class="sources-list">${sources.map(s => `
+        <li>
+          <div class="source-title"><a href="${escapeHtml(s.url)}" target="_blank">${escapeHtml(s.title || s.url)}</a></div>
+          <div class="source-snippet">${escapeHtml(s.snippet || '')}</div>
+          <div class="source-meta">${s.sourceTool} • credibility: ${(s.credibilityScore * 100).toFixed(0)}%</div>
+        </li>
+      `).join('')}</ul>`;
+    }
+
+    function renderToolResults(tools) {
+      if (tools.length === 0) return '<div class="empty-state">No tool results</div>';
+      return tools.map(t => `
+        <div style="margin-bottom: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: 6px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <strong>${t.tool}</strong>
+            <span class="badge badge-${t.success ? 'completed' : 'failed'}">${t.success ? 'success' : 'failed'}</span>
+          </div>
+          <div class="source-meta">${t.latencyMs}ms • ${t.citations?.length || 0} citations</div>
+          ${t.error ? `<div class="error-msg">${escapeHtml(t.error)}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('jobsBody').addEventListener('click', (e) => {
+      const row = e.target.closest('tr[data-id]');
+      if (row) {
+        const job = jobs.find(j => j.jobId === row.dataset.id);
+        if (job) showDetail(job);
+      }
+    });
+
+    document.getElementById('closeDetail').addEventListener('click', () => {
+      selectedJobId = null;
+      document.getElementById('detailPanel').classList.remove('visible');
+      renderJobs();
+    });
+
+    document.getElementById('researchForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const btn = document.getElementById('submitBtn');
+      const errEl = document.getElementById('formError');
+      
+      btn.disabled = true;
+      btn.textContent = 'Starting...';
+      errEl.style.display = 'none';
+
+      const query = form.query.value.trim();
+      const depth = form.depth.value;
+      const apiKey = form.apiKey.value.trim();
+
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (apiKey) headers['x-api-key'] = apiKey;
+        
+        const res = await fetch(`${API_BASE}/research`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query, depth })
+        });
+        
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        
+        form.query.value = '';
+        await fetchJobs();
+        
+        if (!pollInterval) {
+          pollInterval = setInterval(fetchJobs, 3000);
+        }
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Start Research';
+      }
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatDate(d) {
+      if (!d) return '-';
+      const date = new Date(d);
+      return date.toLocaleString();
+    }
+
+    function capitalize(s) {
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    checkHealth();
+    fetchJobs();
+    setInterval(checkHealth, 30000);
+  </script>
+</body>
+</html>
