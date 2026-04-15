@@ -129,6 +129,13 @@ export class FileJobSessionStore implements JobSessionStore {
     return this.cache.get(jobId);
   }
 
+  async list(): Promise<ResearchJob[]> {
+    await this.load();
+    return Array.from(this.cache.values()).sort(
+      (a, b) => b.createdAt.getTime() - a.createdAt.getTime()
+    );
+  }
+
   async setRunning(jobId: string): Promise<void> {
     await this.readModifyWrite(() => {
       const job = this.cache.get(jobId);
@@ -160,5 +167,9 @@ export class FileJobSessionStore implements JobSessionStore {
       }
     });
     this.logger?.info({ component: "job_store", operation: "setFailed", jobId, status: "failed", error: error.slice(0, 200) }, "job_store.setFailed");
+  }
+
+  destroy(): void {
+    this.cache.clear();
   }
 }
