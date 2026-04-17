@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
-export const ResearchDepth = z.enum(["quick", "standard", "deep"]);
+export const ResearchDepth = z.enum(["quick", "standard", "deep", "agentic"]);
 export type ResearchDepth = z.infer<typeof ResearchDepth>;
 
 export const ResearchStatus = z.enum(["pending", "running", "completed", "failed"]);
@@ -19,7 +19,7 @@ export type OutputFormat = z.infer<typeof OutputFormat>;
 
 // ── Core schemas ──────────────────────────────────────────────────────────────
 
-export const ProviderName = z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave"]);
+export const ProviderName = z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave", "exa"]);
 export type ProviderName = z.infer<typeof ProviderName>;
 
 export const ResearchQuerySchema = z.object({
@@ -39,7 +39,7 @@ export const CitationSchema = z.object({
   url: z.string().url(),
   title: z.string(),
   snippet: z.string(),
-  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave"]),
+  sourceTool: z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave", "exa"]),
   fetchedAt: z.coerce.date().default(() => new Date()),
   credibilityScore: z.number().min(0).max(1).default(0.5),
 });

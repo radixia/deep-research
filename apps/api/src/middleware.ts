@@ -33,12 +33,12 @@ export async function requireApiKey(c: Context, next: Next): Promise<Response | 
   return next();
 }
 
-/** Sliding-window rate limit: 30/min for quick/standard, 10/min for deep. */
-export function checkRateLimit(apiKey: string, depth: "quick" | "standard" | "deep"): boolean {
+/** Sliding-window rate limit: 30/min for quick/standard, 10/min for deep/agentic. */
+export function checkRateLimit(apiKey: string, depth: "quick" | "standard" | "deep" | "agentic"): boolean {
   const key = apiKey || "anon";
   prune(key);
   const list = timestamps.get(key) ?? [];
-  const limit = depth === "deep" ? LIMIT_DEEP : LIMIT_QUICK;
+  const limit = depth === "deep" || depth === "agentic" ? LIMIT_DEEP : LIMIT_QUICK;
   if (list.length >= limit) return false;
   list.push(Date.now());
   timestamps.set(key, list);

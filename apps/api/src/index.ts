@@ -11,14 +11,13 @@ import { config } from "./config.js";
 import { getApiKey, requireApiKey, checkRateLimit } from "./middleware.js";
 import { ManusWebhookPayloadSchema } from "./schemas.js";
 import { getManusPublicKey, verifyManusWebhook } from "./manus-webhook-verify.js";
-import {
-  createJob,
-  getJob,
-  setJobRunning,
-  setJobCompleted,
-  setJobFailed,
-} from "./job-store.js";
+import { FileJobSessionStore } from "./job-session-store/index.js";
+import { tracer, withSpan, toolSpanStorage } from "./trace.js";
+import { SpanStatusCode } from "@opentelemetry/api";
 import { FRONTEND_HTML } from "./frontend.js";
+
+// ── Job session store (persisted to file; swappable for DB later) ───────────────
+const jobStore = new FileJobSessionStore({ filePath: config.jobStorePath, logger: pinoLogger });
 
 // ── Shared in-process store ───────────────────────────────────────────────────
 // Single source of truth for Manus task results.
@@ -34,39 +33,62 @@ const orchestrator = createResearchOrchestrator(
     tavilyApiKey: config.tavilyApiKey,
     firecrawlApiKey: config.firecrawlApiKey,
     braveApiKey: config.braveApiKey,
+    exaApiKey: config.exaApiKey,
+    anthropicApiKey: config.anthropicApiKey,
     webhookBaseUrl: config.webhookBaseUrl,
     ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
   },
   {
     manusStore,
     onToolEvent: (evt) => {
-    if (evt.phase === "invoke") {
-      pinoLogger.info(
-        {
-          component: "tool",
-          phase: "invoke",
-          tool: evt.tool,
-          queryPreview: evt.queryPreview,
-          ...(evt.opts && { opts: evt.opts }),
-        },
-        `tool ${evt.tool} invoke`,
-      );
-    } else {
-      pinoLogger.info(
-        {
-          component: "tool",
-          phase: "response",
-          tool: evt.tool,
-          success: evt.success,
-          latencyMs: evt.latencyMs,
-          citationsCount: evt.citationsCount,
-          ...(evt.error && { error: evt.error }),
-          ...(evt.outputPreview && { outputPreview: evt.outputPreview }),
-        },
-        `tool ${evt.tool} response`,
-      );
-    }
-  },
+      const spanMap = toolSpanStorage.getStore();
+      if (evt.phase === "invoke") {
+        const span = tracer.startSpan("tool.run", {
+          attributes: {
+            "tool.name": evt.tool,
+            "tool.query.preview": evt.queryPreview.slice(0, 200),
+          },
+        });
+        if (evt.invocationId && spanMap) spanMap.set(evt.invocationId, span);
+        pinoLogger.info(
+          {
+            component: "tool",
+            phase: "invoke",
+            tool: evt.tool,
+            queryPreview: evt.queryPreview,
+            ...(evt.opts && { opts: evt.opts }),
+          },
+          `tool ${evt.tool} invoke`,
+        );
+      } else {
+        const id = evt.invocationId;
+        if (id && spanMap) {
+          const span = spanMap.get(id);
+          if (span) {
+            span.setAttribute("tool.latency_ms", evt.latencyMs);
+            span.setAttribute("tool.citations_count", evt.citationsCount);
+            span.setAttribute("tool.success", evt.success);
+            if (evt.error) span.setAttribute("tool.error", evt.error.slice(0, 500));
+            span.setStatus(evt.success ? { code: SpanStatusCode.OK } : { code: SpanStatusCode.ERROR, message: evt.error });
+            span.end();
+            spanMap.delete(id);
+          }
+        }
+        pinoLogger.info(
+          {
+            component: "tool",
+            phase: "response",
+            tool: evt.tool,
+            success: evt.success,
+            latencyMs: evt.latencyMs,
+            citationsCount: evt.citationsCount,
+            ...(evt.error && { error: evt.error }),
+            ...(evt.outputPreview && { outputPreview: evt.outputPreview }),
+          },
+          `tool ${evt.tool} response`,
+        );
+      }
+    },
   },
 );
 
@@ -101,40 +123,75 @@ app.get("/health", (c) =>
 );
 
 app.post("/research", async (c) => {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Invalid JSON body" }, 400);
-  }
-  const parsed = ResearchQuerySchema.safeParse(body);
+  return toolSpanStorage.run(new Map(), async () => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid JSON body" }, 400);
+    }
+    const parsed = ResearchQuerySchema.safeParse(body);
 
-  if (!parsed.success) {
-    return c.json({ error: "Invalid request", details: parsed.error.flatten() }, 400);
-  }
+    if (!parsed.success) {
+      return c.json({ error: "Invalid request", details: parsed.error.flatten() }, 400);
+    }
 
-  const apiKey = getApiKey(c);
-  if (!checkRateLimit(apiKey, parsed.data.depth)) {
-    return c.json({ error: "Rate limit exceeded" }, 429);
-  }
+    const apiKey = getApiKey(c);
+    if (!checkRateLimit(apiKey, parsed.data.depth)) {
+      return c.json({ error: "Rate limit exceeded" }, 429);
+    }
 
-  const jobId = createJob();
-  const request = parsed.data;
+    const request = parsed.data;
+    const jobId = await withSpan(
+    "job_store.create",
+    { "job.status": "pending" },
+    async () => {
+      const id = await jobStore.create();
+      return id;
+    }
+  );
   pinoLogger.info({ jobId, depth: request.depth, query: request.query.slice(0, 80) }, "research job created");
 
-  setJobRunning(jobId);
+  await withSpan("job_store.setRunning", { "job.id": jobId, "job.status": "running" }, async () => {
+    await jobStore.setRunning(jobId);
+  });
   const signal = c.req.raw.signal;
-  orchestrator
-    .research(request, signal)
-    .then((result) => setJobCompleted(jobId, result))
-    .catch((err) => setJobFailed(jobId, err instanceof Error ? err.message : String(err)));
+  const researchStartMs = Date.now();
+  const researchSpan = tracer.startSpan("research.run", {
+    attributes: {
+      "research.depth": request.depth,
+      "research.query.preview": request.query.slice(0, 100),
+      "job.id": jobId,
+    },
+  });
+  trackResearch(
+    orchestrator
+      .research(request, signal)
+      .then((result) => {
+        researchSpan.setAttribute("research.status", "completed");
+        researchSpan.setAttribute("research.sources_count", result.sources?.length ?? 0);
+        researchSpan.end();
+        pinoLogger.info({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "completed", sourcesCount: result.sources?.length ?? 0 }, "research completed");
+        return jobStore.setCompleted(jobId, result);
+      })
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        researchSpan.setAttribute("research.status", "failed");
+        researchSpan.setAttribute("research.error", errorMessage.slice(0, 500));
+        researchSpan.recordException(err instanceof Error ? err : new Error(errorMessage));
+        researchSpan.end();
+        pinoLogger.warn({ jobId, depth: request.depth, durationMs: Date.now() - researchStartMs, status: "failed", error: errorMessage.slice(0, 500) }, "research failed");
+        return jobStore.setFailed(jobId, errorMessage);
+      })
+  );
 
-  return c.json({ jobId, status: "pending" as const }, 202);
+    return c.json({ jobId, status: "pending" as const }, 202);
+  });
 });
 
-app.get("/research/:jobId", (c) => {
+app.get("/research/:jobId", async (c) => {
   const jobId = c.req.param("jobId");
-  const job = getJob(jobId);
+  const job = await jobStore.get(jobId);
   if (!job) {
     return c.json({ error: "Job not found" }, 404);
   }
@@ -233,21 +290,41 @@ app.post("/webhooks/manus", async (c) => {
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 let server: ReturnType<typeof serve> | null = null;
 
+/** Background research work started from POST /research (fire-and-forget). */
+const pendingResearch = new Set<Promise<unknown>>();
+
+function trackResearch(p: Promise<unknown>): void {
+  pendingResearch.add(p);
+  void p.finally(() => pendingResearch.delete(p));
+}
+
 if (process.env.NODE_ENV !== "test") {
   server = serve({ fetch: app.fetch, port: config.port });
 }
 
-function shutdown(): void {
-  pinoLogger.info("Shutting down");
+async function shutdown(): Promise<void> {
+  const n = pendingResearch.size;
+  pinoLogger.info({ pendingResearch: n }, "Shutting down");
+  if (n > 0) {
+    await Promise.race([
+      Promise.all(Array.from(pendingResearch)),
+      new Promise<void>((r) => setTimeout(r, SHUTDOWN_TIMEOUT_MS)),
+    ]);
+  }
   manusStore.destroy();
+  jobStore.destroy?.();
   if (server) {
     server.close?.();
   }
-  setTimeout(() => process.exit(0), SHUTDOWN_TIMEOUT_MS).unref();
+  process.exit(0);
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+process.on("SIGTERM", () => {
+  void shutdown();
+});
+process.on("SIGINT", () => {
+  void shutdown();
+});
 
 // ── Server ────────────────────────────────────────────────────────────────────
 

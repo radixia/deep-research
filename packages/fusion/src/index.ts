@@ -14,6 +14,7 @@ const TOOL_WEIGHT: Record<string, number> = {
   manus: 0.9,
   perplexity: 0.85,
   firecrawl: 0.8,
+  exa: 0.78,
   tavily: 0.75,
   brave: 0.75,
 };
@@ -220,16 +221,58 @@ export class FusionEngine {
     rankedSources: Citation[],
     outputFormat: OutputFormat,
   ): string {
-    const priority = ["manus", "perplexity", "firecrawl", "tavily", "brave"] as const;
+    const priority = ["manus", "perplexity", "firecrawl", "exa", "tavily", "brave"] as const;
     const texts = Object.fromEntries(
       toolResults
         .filter((tr) => tr.success && typeof tr.rawOutput === "string")
         .map((tr) => [tr.tool, tr.rawOutput as string]),
     );
 
+    const primaryText = (): string => {
+      for (const tool of priority) {
+        if (texts[tool]) return texts[tool]!;
+      }
+      return "";
+    };
+
+    if (outputFormat === "structured_json") {
+      const summary = primaryText();
+      return JSON.stringify(
+        {
+          query,
+          summary,
+          sources: rankedSources.map((c) => ({
+            url: c.url,
+            title: c.title,
+            snippet: c.snippet,
+            sourceTool: c.sourceTool,
+            credibilityScore: c.credibilityScore,
+            fetchedAt: c.fetchedAt instanceof Date ? c.fetchedAt.toISOString() : String(c.fetchedAt),
+          })),
+          toolResults: toolResults.map((tr) => ({
+            tool: tr.tool,
+            success: tr.success,
+            latencyMs: tr.latencyMs,
+            citationsCount: tr.citations.length,
+          })),
+        },
+        null,
+        2
+      );
+    }
+
+    if (outputFormat === "rag_chunks") {
+      const chunks = rankedSources.map((c, i) => {
+        const body = c.snippet.length > 800 ? `${c.snippet.slice(0, 800)}…` : c.snippet;
+        return `[chunk ${i + 1}] ${c.title}\nsource: ${c.url}\n${body}`;
+      });
+      return chunks.length > 0 ? chunks.join("\n\n---\n\n") : `No chunks for: ${query}`;
+    }
+
     if (outputFormat === "citations_list") {
       const lines = rankedSources.map(
-        (c, i) => `${i + 1}. [${c.title}](${c.url})\n   ${c.snippet.slice(0, 200)}...`,
+        (c, i) =>
+          `${i + 1}. [${c.title}](${c.url})\n   ${c.snippet.length > 200 ? `${c.snippet.slice(0, 200)}…` : c.snippet}`,
       );
       return `## Research: ${query}\n\n### Sources\n\n${lines.join("\n\n")}`;
     }
@@ -251,7 +294,7 @@ export class FusionEngine {
     }
     const additional = rankedSources
       .slice(0, 5)
-      .map((c) => `- **${c.title}**: ${c.snippet.slice(0, 150)}...`);
+      .map((c) => `- **${c.title}**: ${c.snippet.slice(0, 150)}…`);
     const additionalBlock =
       additional.length > 0 ? `\n\n### Additional sources\n\n${additional.join("\n")}` : "";
     return `## Research: ${query}\n\n${primary || "No synthesis available."}${additionalBlock}`;

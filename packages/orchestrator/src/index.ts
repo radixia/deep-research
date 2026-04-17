@@ -1,4 +1,5 @@
 import type { ResearchQuery, ResearchResult, ToolClient, ToolResult } from "@deep-research/types";
+import type { AgentClients } from "@deep-research/agent";
 import { FusionEngine } from "@deep-research/fusion";
 import { decompose } from "./decompose.js";
 import { decomposeWithLlm } from "./decompose-llm.js";
@@ -10,21 +11,23 @@ export interface DepthConfig {
 }
 
 const DEFAULT_DEPTH_CONFIG: DepthConfig = {
-  quick: ["perplexity", "tavily", "brave"],
-  standard: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily"] },
-  deep: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily"], slow: ["manus"] },
+  quick: ["perplexity", "tavily", "brave", "exa"],
+  standard: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily", "exa"] },
+  deep: { main: ["perplexity", "firecrawl", "brave"], subQueries: ["tavily", "exa"], slow: ["manus"] },
 };
 
 /** Emitted before each tool.run and after it resolves (for observability). */
 export type ToolOrchestratorEvent =
   | {
       phase: "invoke";
+      invocationId?: string;
       tool: string;
       queryPreview: string;
       opts?: { maxResults?: number; count?: number; searchLang?: string };
     }
   | {
       phase: "response";
+      invocationId?: string;
       tool: string;
       queryPreview: string;
       success: boolean;
@@ -59,6 +62,7 @@ export class ResearchOrchestrator {
     depthConfig?: DepthConfig,
     private readonly anthropicApiKey?: string,
     private readonly onToolEvent?: (e: ToolOrchestratorEvent) => void,
+    private readonly agentClients?: AgentClients,
   ) {
     this.depthConfig = depthConfig ?? DEFAULT_DEPTH_CONFIG;
   }
@@ -73,7 +77,50 @@ export class ResearchOrchestrator {
   async research(request: ResearchQuery, signal?: AbortSignal): Promise<ResearchResult> {
     const createdAt = new Date();
     try {
-      // When providers are explicitly specified, run them directly (ignoring depth routing).
+      // ── Agentic mode (from main) ────────────────────────────────────────
+      if (request.depth === "agentic") {
+        if (!this.anthropicApiKey) {
+          return {
+            query: request.query,
+            depth: "agentic",
+            status: "failed",
+            summary: "Agentic research requires ANTHROPIC_API_KEY.",
+            sources: [],
+            toolResults: [],
+            confidenceScore: 0,
+            executiveSummary: "",
+            detailSections: [],
+            references: [],
+            createdAt,
+          };
+        }
+        const { DeepResearchAgent } = await import("@deep-research/agent");
+        const agent = new DeepResearchAgent(
+          { anthropicApiKey: this.anthropicApiKey },
+          this.agentClients ?? {},
+          (evt) => {
+            if (evt.type === "researching") {
+              this.onToolEvent?.({
+                phase: "invoke",
+                tool: "agent",
+                queryPreview: evt.topic,
+              });
+            } else if (evt.type === "topic_complete") {
+              this.onToolEvent?.({
+                phase: "response",
+                tool: "agent",
+                queryPreview: evt.topic,
+                success: true,
+                latencyMs: 0,
+                citationsCount: evt.citationsFound,
+              });
+            }
+          },
+        );
+        return agent.research(request, signal);
+      }
+
+      // ── Provider selection: direct mode or depth-based routing ──────────
       const toolResults =
         request.providers && request.providers.length > 0
           ? await this.runDirect(request, signal)
@@ -136,6 +183,7 @@ export class ResearchOrchestrator {
     },
     signal?: AbortSignal,
   ): Promise<ToolResult> {
+    const invocationId = crypto.randomUUID().slice(0, 8);
     const queryPreview = query.length > 200 ? `${query.slice(0, 200)}…` : query;
     const optsSummary =
       opts && (opts.maxResults != null || opts.count != null || opts.searchLang != null)
@@ -148,6 +196,7 @@ export class ResearchOrchestrator {
 
     this.onToolEvent?.({
       phase: "invoke",
+      invocationId,
       tool: name,
       queryPreview,
       ...(optsSummary && Object.keys(optsSummary).length > 0 ? { opts: optsSummary } : {}),
@@ -165,6 +214,7 @@ export class ResearchOrchestrator {
       };
       this.onToolEvent?.({
         phase: "response",
+        invocationId,
         tool: name,
         queryPreview,
         success: false,
@@ -179,6 +229,7 @@ export class ResearchOrchestrator {
       const { outputPreview } = summarizeToolResponse(result);
       this.onToolEvent?.({
         phase: "response",
+        invocationId,
         tool: name,
         queryPreview,
         success: result.success,
@@ -210,7 +261,7 @@ export class ResearchOrchestrator {
           query,
           {
             ...(name === "brave" ? { count: 10, searchLang: language } : {}),
-            ...(name === "tavily" ? { maxResults: 10 } : {}),
+            ...(name === "tavily" || name === "exa" ? { maxResults: 10 } : {}),
             ...domainOpts,
           },
           signal,
@@ -231,6 +282,7 @@ export class ResearchOrchestrator {
       this.runTool("perplexity", query, { ...domainOpts }, signal),
       this.runTool("tavily", query, { maxResults: 5, ...domainOpts }, signal),
       this.runTool("brave", query, { count: 5, searchLang: language, ...domainOpts }, signal),
+      this.runTool("exa", query, { maxResults: 5, ...domainOpts }, signal),
     ]);
   }
 
@@ -251,7 +303,17 @@ export class ResearchOrchestrator {
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        standard.subQueries.map((name) => this.runTool(name, q, { ...domainOpts }, signal)),
+        standard.subQueries.map((name) =>
+          this.runTool(
+            name,
+            q,
+            {
+              ...(name === "tavily" || name === "exa" ? { maxResults: 5 } : {}),
+              ...domainOpts,
+            },
+            signal,
+          ),
+        ),
       ),
     );
     return [...mainResults, ...subResults];
@@ -277,7 +339,17 @@ export class ResearchOrchestrator {
     );
     const subResults = await Promise.all(
       subQueries.flatMap((q) =>
-        deep.subQueries.map((name) => this.runTool(name, q, { ...domainOpts }, signal)),
+        deep.subQueries.map((name) =>
+          this.runTool(
+            name,
+            q,
+            {
+              ...(name === "tavily" || name === "exa" ? { maxResults: 5 } : {}),
+              ...domainOpts,
+            },
+            signal,
+          ),
+        ),
       ),
     );
     const slow = await slowPromise;

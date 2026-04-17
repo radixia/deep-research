@@ -51,16 +51,19 @@ export class PerplexityClient {
         title: typeof c === "string" ? "" : (c.title ?? ""),
         snippet: typeof c === "string" ? "" : (c.snippet ?? ""),
       }));
-      let citations: Citation[] = rawCitations
-        .filter((c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url))
-        .map((c) => ({
-          url: c.url,
-          title: c.title,
-          snippet: c.snippet,
-          sourceTool: "perplexity" as const,
-          fetchedAt: new Date(),
-          credibilityScore: 0.5,
-        }));
+      const filtered = rawCitations.filter(
+        (c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url),
+      );
+      const n = filtered.length;
+      let citations: Citation[] = filtered.map((c, i) => ({
+        url: c.url,
+        title: c.title,
+        snippet: c.snippet,
+        sourceTool: "perplexity" as const,
+        fetchedAt: new Date(),
+        // Earlier citations in API order tend to be more central to the answer.
+        credibilityScore: n <= 1 ? 0.55 : Math.min(1, 0.45 + ((n - i) / n) * 0.35),
+      }));
 
       if (allowedDomains && allowedDomains.length > 0) {
         citations = citations.filter((c) => {

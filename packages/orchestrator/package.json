@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
+    "@deep-research/agent": "workspace:*",
     "@deep-research/fusion": "workspace:*",
     "@deep-research/types": "workspace:*"
   },

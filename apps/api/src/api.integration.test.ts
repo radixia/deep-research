@@ -1,8 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { Hono } from "hono";
-import type { ResearchResult, ToolClient, ToolResult, Citation } from "@deep-research/types";
-import { FusionEngine } from "@deep-research/fusion";
-import { ResearchOrchestrator } from "@deep-research/orchestrator";
+import {
+  FusionEngine,
+  ResearchOrchestrator,
+  type ResearchResult,
+  type ToolClient,
+  type ToolResult,
+  type Citation,
+} from "@deep-research/sdk";
 
 // ── Build a test app with mocked orchestrator ────────────────────────────────
 

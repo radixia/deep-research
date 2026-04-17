@@ -99,7 +99,7 @@ export function createMcpServer(deps: McpServerDeps): McpServer {
             "Research depth: quick (~10-30s, 3 providers), standard (~1 min, sub-queries), deep (~10-15 min, all providers incl. Manus)",
           ),
         providers: z
-          .array(z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave"]))
+          .array(z.enum(["manus", "perplexity", "tavily", "firecrawl", "brave", "exa"]))
           .optional()
           .describe(
             "Explicit list of providers to use. When omitted, depth-based routing selects providers automatically.",

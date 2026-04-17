@@ -1,0 +1,4 @@
+- Stack: TypeScript, pnpm workspaces monorepo (packages + apps), tsup, Node.js >= 22
+- Package manager: pnpm 10.32.1 (declared in packageManager)
+- Tests: vitest
+- Deep research agent using Firecrawl, Tavily, Perplexity

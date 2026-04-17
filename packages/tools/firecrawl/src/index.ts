@@ -53,19 +53,18 @@ export class FirecrawlClient {
         success?: boolean;
       };
 
-      const citations: Citation[] = (data.data ?? [])
-        .filter((item) => item.url)
-        .map((item) => ({
-          url: item.url!,
-          title: item.title ?? "",
-          snippet: (() => {
+      const rows = (data.data ?? []).filter((item) => item.url);
+      const citations: Citation[] = rows.map((item, i) => ({
+        url: item.url!,
+        title: item.title ?? "",
+        snippet: (() => {
           const md = item.markdown ?? "";
           return md.length > 500 ? `${md.slice(0, 500)}…` : md;
         })(),
-          sourceTool: "firecrawl" as const,
-          fetchedAt: new Date(),
-          credibilityScore: 0.5,
-        }));
+        sourceTool: "firecrawl" as const,
+        fetchedAt: new Date(),
+        credibilityScore: Math.min(1, 0.42 + (rows.length - i) / Math.max(rows.length * 2, 1) * 0.35),
+      }));
 
       return { tool: "firecrawl", rawOutput: data, citations, latencyMs: Date.now() - start, success: true };
     } catch (err) {

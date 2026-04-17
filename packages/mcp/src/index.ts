@@ -31,6 +31,7 @@ const orchestrator = createResearchOrchestrator({
   tavilyApiKey: requireEnv("TAVILY_API_KEY"),
   firecrawlApiKey: requireEnv("FIRECRAWL_API_KEY"),
   braveApiKey: requireEnv("BRAVE_API_KEY"),
+  exaApiKey: process.env["EXA_API_KEY"] ?? "",
   webhookBaseUrl: process.env["WEBHOOK_BASE_URL"] ?? "http://localhost:3000",
   ...(process.env["ANTHROPIC_API_KEY"] ? { anthropicApiKey: process.env["ANTHROPIC_API_KEY"] } : {}),
 });

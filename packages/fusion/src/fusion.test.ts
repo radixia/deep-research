@@ -124,6 +124,60 @@ describe("FusionEngine", () => {
     expect(out.sources).toHaveLength(2);
   });
 
+  it("formats summary as structured_json when requested", () => {
+    const results: ToolResult[] = [
+      {
+        tool: "perplexity",
+        success: true,
+        citations: [
+          baseCitation({
+            url: "https://example.com",
+            title: "Example",
+            snippet: "Snippet",
+            sourceTool: "perplexity",
+          }),
+        ],
+        rawOutput: "Answer text.",
+        latencyMs: 0,
+      },
+    ];
+    const out = engine.merge("q", results, { outputFormat: "structured_json" });
+    const parsed = JSON.parse(out.summary) as { query: string; summary: string; sources: unknown[] };
+    expect(parsed.query).toBe("q");
+    expect(parsed.summary).toBe("Answer text.");
+    expect(Array.isArray(parsed.sources)).toBe(true);
+  });
+
+  it("formats summary as rag_chunks when requested", () => {
+    const results: ToolResult[] = [
+      {
+        tool: "tavily",
+        success: true,
+        citations: [
+          baseCitation({
+            url: "https://a.com",
+            title: "A",
+            snippet: "Long snippet ".repeat(100),
+            sourceTool: "tavily",
+          }),
+          baseCitation({
+            url: "https://b.com",
+            title: "B",
+            snippet: "Second chunk body",
+            sourceTool: "tavily",
+          }),
+        ],
+        rawOutput: null,
+        latencyMs: 0,
+      },
+    ];
+    const out = engine.merge("topic", results, { outputFormat: "rag_chunks" });
+    expect(out.summary).toContain("[chunk 1]");
+    expect(out.summary).toContain("[chunk 2]");
+    expect(out.summary).toContain("https://a.com");
+    expect(out.summary).toContain("---");
+  });
+
   it("formats summary as citations_list when requested", () => {
     const results: ToolResult[] = [
       {

@@ -2,13 +2,20 @@ import { describe, it, expect } from "vitest";
 import { decompose } from "./decompose.js";
 
 describe("decompose", () => {
-  it("returns query plus three templated sub-queries by default", () => {
+  it("uses short-query variants for few words (no meaningless suffixes)", () => {
     const out = decompose("agentic AI");
-    expect(out).toHaveLength(4);
+    expect(out).toHaveLength(3);
     expect(out[0]).toBe("agentic AI");
-    expect(out[1]).toContain("latest news 2026");
-    expect(out[2]).toContain("comparison analysis");
-    expect(out[3]).toContain("best practices");
+    expect(out[1]).toContain("overview");
+    expect(out[2]).toContain("context");
+  });
+
+  it("uses broader variants for longer queries", () => {
+    const out = decompose("state of agentic AI in enterprise adoption", 4);
+    expect(out).toHaveLength(3);
+    expect(out[0]).toBe("state of agentic AI in enterprise adoption");
+    expect(out[1]).toContain("recent developments");
+    expect(out[2]).toContain("comparison");
   });
 
   it("respects max parameter", () => {

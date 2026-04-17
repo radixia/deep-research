@@ -6,12 +6,14 @@ const EnvSchema = z.object({
   TAVILY_API_KEY: z.string().min(1, "TAVILY_API_KEY is required"),
   FIRECRAWL_API_KEY: z.string().min(1, "FIRECRAWL_API_KEY is required"),
   BRAVE_API_KEY: z.string().min(1, "BRAVE_API_KEY is required"),
+  EXA_API_KEY: z.string().min(1, "EXA_API_KEY is required"),
   ANTHROPIC_API_KEY: z.string().optional(),
   WEBHOOK_BASE_URL: z.string().url().default("http://localhost:3000"),
   MANUS_WEBHOOK_SECRET: z.string().default(""),
   PORT: z.coerce.number().int().min(1).default(3000),
   APP_ENV: z.enum(["development", "production"]).default("development"),
   API_KEY: z.string().optional(),
+  JOB_STORE_PATH: z.string().min(1).default("output/jobs.json"),
 });
 
 const ProductionEnvSchema = EnvSchema.refine(
@@ -31,12 +33,14 @@ function loadConfig(): z.infer<typeof EnvSchema> {
     TAVILY_API_KEY: process.env["TAVILY_API_KEY"],
     FIRECRAWL_API_KEY: process.env["FIRECRAWL_API_KEY"],
     BRAVE_API_KEY: process.env["BRAVE_API_KEY"],
+    EXA_API_KEY: process.env["EXA_API_KEY"],
     ANTHROPIC_API_KEY: process.env["ANTHROPIC_API_KEY"],
     WEBHOOK_BASE_URL: process.env["WEBHOOK_BASE_URL"],
     MANUS_WEBHOOK_SECRET: process.env["MANUS_WEBHOOK_SECRET"],
     PORT: process.env["PORT"],
     APP_ENV: process.env["APP_ENV"],
     API_KEY: process.env["API_KEY"],
+    JOB_STORE_PATH: process.env["JOB_STORE_PATH"],
   });
 
   if (!parsed.success) {
@@ -60,10 +64,12 @@ export const config = {
   tavilyApiKey: raw.TAVILY_API_KEY,
   firecrawlApiKey: raw.FIRECRAWL_API_KEY,
   braveApiKey: raw.BRAVE_API_KEY,
+  exaApiKey: raw.EXA_API_KEY,
   anthropicApiKey: raw.ANTHROPIC_API_KEY,
   webhookBaseUrl: raw.WEBHOOK_BASE_URL,
   manusWebhookSecret: raw.MANUS_WEBHOOK_SECRET,
   port: raw.PORT,
   env: raw.APP_ENV,
   apiKey: raw.API_KEY ?? "",
+  jobStorePath: raw.JOB_STORE_PATH,
 } as const;
