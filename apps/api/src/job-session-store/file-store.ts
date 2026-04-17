@@ -60,7 +60,7 @@ export interface FileJobSessionStoreOptions {
 
 export class FileJobSessionStore implements JobSessionStore {
   private readonly filePath: string;
-  private readonly logger?: JobStoreLogger;
+  private readonly logger: JobStoreLogger | undefined;
   private cache = new Map<string, ResearchJob>();
 
   constructor(options: FileJobSessionStoreOptions) {
@@ -149,6 +149,11 @@ export class FileJobSessionStore implements JobSessionStore {
       { component: "job_store", operation: "setCompleted", jobId, status: "completed", summaryLength: result.summary?.length ?? 0, sourcesCount: result.sources?.length ?? 0 },
       "job_store.setCompleted"
     );
+  }
+
+  /** No-op cleanup — file store has no timers to clear. */
+  destroy(): void {
+    this.cache.clear();
   }
 
   async setFailed(jobId: string, error: string): Promise<void> {
