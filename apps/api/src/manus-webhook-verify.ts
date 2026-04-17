@@ -6,6 +6,7 @@
 import { createHash, createVerify } from "node:crypto";
 
 const MANUS_PUBLIC_KEY_URLS = [
+  "https://api.manus.ai/v2/webhook.publicKey",
   "https://open.manus.ai/v1/webhook/public_key",
   "https://open.manus.im/v1/webhook/public_key",
 ];
@@ -21,7 +22,10 @@ export async function getManusPublicKey(apiKey: string): Promise<string> {
   for (const url of MANUS_PUBLIC_KEY_URLS) {
     try {
       const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: {
+          "x-manus-api-key": apiKey,
+          Authorization: `Bearer ${apiKey}`,
+        },
       });
       if (!res.ok) {
         lastErr = new Error(`${url}: ${res.status}`);

@@ -1,5 +1,5 @@
 /**
- * Manus API client.
+ * Manus API v2 client.
  * The "deep executor" — autonomously plans and runs multi-step research tasks.
  *
  * Result delivery strategy (in order of preference):
@@ -12,8 +12,9 @@ import { ManusTaskStore } from "./store.js";
 
 export { ManusTaskStore } from "./store.js";
 
-const MANUS_BASE_URL = "https://open.manus.im";
+const MANUS_BASE_URL = "https://api.manus.ai";
 const API_POLL_INTERVAL_MS = 5_000;
+const INITIAL_POLL_DELAY_MS = 3_000;
 
 export class ManusClient {
   private readonly headers: Record<string, string>;
@@ -25,34 +26,77 @@ export class ManusClient {
     private readonly store?: ManusTaskStore,
   ) {
     this.headers = {
-      Authorization: `Bearer ${apiKey}`,
+      "x-manus-api-key": apiKey,
       "Content-Type": "application/json",
     };
   }
 
   async createTask(query: string, signal?: AbortSignal): Promise<string> {
-    const res = await fetch(`${MANUS_BASE_URL}/v1/tasks`, {
+    const res = await fetch(`${MANUS_BASE_URL}/v2/task.create`, {
       method: "POST",
       headers: this.headers,
       body: JSON.stringify({
-        task: query,
-        webhook_url: this.webhookUrl,
-        return_format: "markdown",
+        message: {
+          content: query,
+        },
       }),
       ...(signal !== undefined && { signal }),
     });
-    if (!res.ok) throw new Error(`Manus createTask failed: ${res.status}`);
-    const data = (await res.json()) as { task_id: string };
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Manus createTask failed: ${res.status} ${body}`);
+    }
+    const data = (await res.json()) as { ok: boolean; task_id: string; error?: { code: string; message: string } };
+    if (!data.ok) {
+      throw new Error(`Manus createTask error: ${data.error?.code ?? "unknown"} — ${data.error?.message ?? ""}`);
+    }
     return data.task_id;
   }
 
   async getTask(taskId: string, signal?: AbortSignal): Promise<{ status: string; result?: string }> {
-    const res = await fetch(`${MANUS_BASE_URL}/v1/tasks/${taskId}`, {
+    const res = await fetch(`${MANUS_BASE_URL}/v2/task.detail?task_id=${encodeURIComponent(taskId)}`, {
       headers: this.headers,
       ...(signal !== undefined && { signal }),
     });
     if (!res.ok) throw new Error(`Manus getTask failed: ${res.status}`);
-    return res.json() as Promise<{ status: string; result?: string }>;
+    const data = (await res.json()) as {
+      ok: boolean;
+      task?: { status: string };
+    };
+    // Map v2 statuses to our internal ones
+    const rawStatus = data.task?.status ?? "unknown";
+    const status = rawStatus === "stopped" ? "completed" : rawStatus;
+    return { status };
+  }
+
+  /** Fetch final assistant messages from a completed task. */
+  async getTaskResult(taskId: string, signal?: AbortSignal): Promise<string | null> {
+    const res = await fetch(
+      `${MANUS_BASE_URL}/v2/task.listMessages?task_id=${encodeURIComponent(taskId)}&order=asc&limit=100`,
+      {
+        headers: this.headers,
+        ...(signal !== undefined && { signal }),
+      },
+    );
+    if (!res.ok) return null;
+
+    // v2 message format: each message has a `type` field.
+    // assistant_message → { type: "assistant_message", assistant_message: { content: "..." } }
+    interface V2Message {
+      type: string;
+      assistant_message?: { content?: string };
+    }
+    const data = (await res.json()) as {
+      ok: boolean;
+      messages?: V2Message[];
+    };
+    if (!data.ok || !data.messages) return null;
+
+    const assistantMessages = data.messages
+      .filter((m) => m.type === "assistant_message" && m.assistant_message?.content)
+      .map((m) => m.assistant_message!.content!);
+
+    return assistantMessages.length > 0 ? assistantMessages.join("\n\n") : null;
   }
 
   async run(query: string, options?: { signal?: AbortSignal; maxWaitMs?: number }): Promise<ToolResult> {
@@ -64,9 +108,9 @@ export class ManusClient {
 
       this.store?.init(taskId);
 
-      const result = this.store
-        ? await this.waitViaStore(taskId, maxWaitMs, signal)
-        : await this.waitViaPolling(taskId, maxWaitMs, start, signal);
+      // Always poll: webhook store is a bonus (resolves faster if webhook fires),
+      // but we can't rely on it since webhooks may not reach localhost.
+      const result = await this.waitViaPolling(taskId, maxWaitMs, start, signal);
 
       return {
         tool: "manus",
@@ -100,14 +144,25 @@ export class ManusClient {
     taskId: string,
     maxWaitMs: number,
     start: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
   ): Promise<string | null> {
+    // Manus v2 has eventual consistency — task.detail returns 404 immediately
+    // after creation. Wait a few seconds before first poll.
+    await sleep(INITIAL_POLL_DELAY_MS);
+
     while (true) {
       if (signal?.aborted) return null;
       if (Date.now() - start > maxWaitMs) return null;
-      const task = await this.getTask(taskId, signal);
-      if (task.status === "completed") return task.result ?? null;
-      if (task.status === "failed") return null;
+      try {
+        const task = await this.getTask(taskId, signal);
+        if (task.status === "completed") {
+          // Fetch the actual result content via listMessages
+          return this.getTaskResult(taskId, signal);
+        }
+        if (task.status === "failed" || task.status === "error") return null;
+      } catch {
+        // task.detail may 404 during initial consistency window — keep polling
+      }
       await sleep(API_POLL_INTERVAL_MS);
     }
   }

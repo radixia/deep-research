@@ -33,7 +33,6 @@ const orchestrator = createResearchOrchestrator(
     firecrawlApiKey: config.firecrawlApiKey,
     braveApiKey: config.braveApiKey,
     exaApiKey: config.exaApiKey,
-    anthropicApiKey: config.anthropicApiKey,
     webhookBaseUrl: config.webhookBaseUrl,
     ...(config.anthropicApiKey ? { anthropicApiKey: config.anthropicApiKey } : {}),
   },
@@ -68,7 +67,7 @@ const orchestrator = createResearchOrchestrator(
             span.setAttribute("tool.citations_count", evt.citationsCount);
             span.setAttribute("tool.success", evt.success);
             if (evt.error) span.setAttribute("tool.error", evt.error.slice(0, 500));
-            span.setStatus(evt.success ? { code: SpanStatusCode.OK } : { code: SpanStatusCode.ERROR, message: evt.error });
+            span.setStatus(evt.success ? { code: SpanStatusCode.OK } : { code: SpanStatusCode.ERROR, message: evt.error ?? "unknown error" });
             span.end();
             spanMap.delete(id);
           }

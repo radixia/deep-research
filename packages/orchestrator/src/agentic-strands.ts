@@ -1,5 +1,5 @@
 import { Agent, FunctionTool } from "@strands-agents/sdk";
-import { AnthropicModel } from "@strands-agents/sdk/anthropic";
+import { AnthropicModel } from "@strands-agents/sdk/models/anthropic";
 import type { ResearchQuery, ResearchResult, ToolClient, ToolResult } from "@deep-research/types";
 import type { FusionEngine } from "@deep-research/fusion";
 
