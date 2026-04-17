@@ -1,9 +1,13 @@
 {
-  "name": "@deep-research/agent",
+  "name": "@deep-research/mcp",
   "version": "0.1.0",
+  "description": "MCP (Model Context Protocol) server exposing deep research as a tool",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "deep-research-mcp": "./dist/index.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -15,15 +19,10 @@
     "dev": "tsup src/index.ts --format esm --dts --watch"
   },
   "dependencies": {
-    "ai": "^6",
-    "@ai-sdk/anthropic": "^3",
-    "zod": "^3.23.0",
+    "@deep-research/sdk": "workspace:*",
     "@deep-research/types": "workspace:*",
-    "@deep-research/tools-tavily": "workspace:*",
-    "@deep-research/tools-perplexity": "workspace:*",
-    "@deep-research/tools-firecrawl": "workspace:*",
-    "@deep-research/tools-brave": "workspace:*",
-    "@deep-research/tools-exa": "workspace:*"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

@@ -15,7 +15,7 @@ describe("FileJobSessionStore", () => {
   });
 
   afterEach(async () => {
-    store.destroy();
+    store.destroy?.();
     await rm(dir, { recursive: true, force: true });
   });
 
@@ -30,6 +30,9 @@ describe("FileJobSessionStore", () => {
       sources: [],
       toolResults: [],
       confidenceScore: 0.5,
+      executiveSummary: "",
+      detailSections: [],
+      references: [],
       createdAt: new Date(),
       completedAt: new Date(),
     });
@@ -43,6 +46,6 @@ describe("FileJobSessionStore", () => {
     const store2 = new FileJobSessionStore({ filePath: join(dir, "jobs.json") });
     const job = await store2.get(jobId);
     expect(job?.status).toBe("pending");
-    store2.destroy();
+    store2.destroy?.();
   });
 });

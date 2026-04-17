@@ -13,9 +13,10 @@ export class PerplexityClient {
     private readonly model = "sonar-deep-research",
   ) {}
 
-  async run(query: string, options?: { signal?: AbortSignal }): Promise<ToolResult> {
+  async run(query: string, options?: { signal?: AbortSignal; allowedDomains?: string[] }): Promise<ToolResult> {
     const start = Date.now();
     const signal = options?.signal;
+    const allowedDomains = options?.allowedDomains;
     try {
       const res = await fetch(`${PERPLEXITY_BASE_URL}/chat/completions`, {
         method: "POST",
@@ -51,10 +52,10 @@ export class PerplexityClient {
         snippet: typeof c === "string" ? "" : (c.snippet ?? ""),
       }));
       const filtered = rawCitations.filter(
-        (c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url)
+        (c) => c.url.trim().length > 0 && /^https?:\/\//i.test(c.url),
       );
       const n = filtered.length;
-      const citations: Citation[] = filtered.map((c, i) => ({
+      let citations: Citation[] = filtered.map((c, i) => ({
         url: c.url,
         title: c.title,
         snippet: c.snippet,
@@ -63,6 +64,17 @@ export class PerplexityClient {
         // Earlier citations in API order tend to be more central to the answer.
         credibilityScore: n <= 1 ? 0.55 : Math.min(1, 0.45 + ((n - i) / n) * 0.35),
       }));
+
+      if (allowedDomains && allowedDomains.length > 0) {
+        citations = citations.filter((c) => {
+          try {
+            const host = new URL(c.url).hostname.replace(/^www\./, "");
+            return allowedDomains.some((d) => host === d || host.endsWith(`.${d}`));
+          } catch {
+            return false;
+          }
+        });
+      }
 
       return { tool: "perplexity", rawOutput: content, citations, latencyMs: Date.now() - start, success: true };
     } catch (err) {

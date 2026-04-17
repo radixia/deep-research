@@ -14,6 +14,7 @@ import { getManusPublicKey, verifyManusWebhook } from "./manus-webhook-verify.js
 import { FileJobSessionStore } from "./job-session-store/index.js";
 import { tracer, withSpan, toolSpanStorage } from "./trace.js";
 import { SpanStatusCode } from "@opentelemetry/api";
+import { FRONTEND_HTML } from "./frontend.js";
 
 // ── Job session store (persisted to file; swappable for DB later) ───────────────
 const jobStore = new FileJobSessionStore({ filePath: config.jobStorePath, logger: pinoLogger });
@@ -107,12 +108,15 @@ app.use("*", cors());
 
 // ── Protected routes (auth when API_KEY is set) ───────────────────────────────
 app.use("/research", requireApiKey);
+app.use("/research/*", requireApiKey);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 app.get("/", (c) =>
   c.json({ status: "ok", service: "deep-research-agent", version: "0.1.0" }),
 );
+
+app.get("/app", (c) => c.html(FRONTEND_HTML));
 
 app.get("/health", (c) =>
   c.json({ status: "healthy", manusStoreTasks: manusStore.size }),

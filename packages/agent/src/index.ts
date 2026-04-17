@@ -145,6 +145,15 @@ export class DeepResearchAgent {
         sources: synthesis.citations,
         toolResults: [agentToolResult],
         confidenceScore,
+        executiveSummary: synthesis.markdown,
+        detailSections: [],
+        references: synthesis.citations.map((c, i) => ({
+          index: i + 1,
+          url: c.url,
+          title: c.title,
+          snippet: c.snippet,
+          sourceTool: c.sourceTool,
+        })),
         createdAt,
         completedAt: new Date(),
       };
@@ -158,6 +167,9 @@ export class DeepResearchAgent {
         sources: [],
         toolResults: [],
         confidenceScore: 0,
+        executiveSummary: "",
+        detailSections: [],
+        references: [],
         createdAt,
       };
     }

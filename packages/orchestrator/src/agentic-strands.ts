@@ -155,6 +155,9 @@ export async function runAgenticResearch(
     sources: merged.sources,
     toolResults,
     confidenceScore: merged.confidenceScore,
+    executiveSummary: merged.executiveSummary,
+    detailSections: merged.detailSections,
+    references: merged.references,
     createdAt,
     completedAt: new Date(),
   };
